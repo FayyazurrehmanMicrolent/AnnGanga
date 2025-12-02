@@ -11,7 +11,6 @@ export default function EditProfile() {
   const { user, token } = useAuth();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [formData, setFormData] = useState({
     name: '',
     email: '',
