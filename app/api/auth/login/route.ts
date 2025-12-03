@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
           data: {
             phone: phone,
             message: 'Please verify with OTP',
+            otp: generatedOtp, // Include OTP in response for development
           },
         },
         { status: 200 }

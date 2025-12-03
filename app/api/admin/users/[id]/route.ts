@@ -40,7 +40,7 @@ export async function GET(req: NextRequest, context: any) {
         }
 
         // TODO: Fetch order history when Order model is created
-        const orderHistory: any[] = [];
+        const orderHistory = [];
         const totalOrders = 0;
         const totalSpent = 0;
         const averageOrderValue = 0;

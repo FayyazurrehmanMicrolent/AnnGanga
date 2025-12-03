@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Menu, Search, Heart, ShoppingCart, User, Settings, LogOut } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import CartCount from './CartCount';
+import WishlistCount from './WishlistCount';
 
 export default function Navbar() {
   const [sidebar, setSidebar] = useState(false);
@@ -60,8 +61,17 @@ export default function Navbar() {
               </button>
 
               {/* Logo */}
-              <Link href="/" className="text-gray-900 font-extrabold text-2xl tracking-wide hover:opacity-80 transition">
-                SpiceHome
+              <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition">
+                <Image 
+                  src="/img_Logo.png" 
+                  alt="AnnGanga Logo" 
+                  width={40} 
+                  height={40}
+                  className="object-contain"
+                />
+                <span className="text-gray-900 font-extrabold text-2xl tracking-wide">
+                  AnnGanga
+                </span>
               </Link>
             </div>
 
@@ -86,10 +96,11 @@ export default function Navbar() {
             <div className="flex items-center gap-6 text-gray-700">
               <Link 
                 href="/wishlist" 
-                className="hover:text-indigo-600 transition"
+                className="relative hover:text-indigo-600 transition"
                 aria-label="Wishlist"
               >
                 <Heart size={22} className="cursor-pointer" />
+                <WishlistCount />
               </Link>
 
               <Link 
@@ -149,6 +160,14 @@ export default function Navbar() {
                       >
                         <User className="w-4 h-4 mr-2" />
                         My Profile
+                      </Link>
+                      <Link 
+                        href="/orders" 
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setIsDropdownOpen(false)}
+                      >
+                        <ShoppingCart className="w-4 h-4 mr-2" />
+                        My Orders
                       </Link>    
                       <button
                         onClick={() => {

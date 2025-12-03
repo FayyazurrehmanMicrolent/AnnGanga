@@ -65,10 +65,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Get non-deleted products, newest first
-    const products = (await Product.find({ isDeleted: false })
+    const products: (IProduct & { _id: any })[] = await Product.find({ isDeleted: false })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .lean()) as unknown as (IProduct & { _id: any })[];
+      .lean();
 
     if (!products.length) {
       return NextResponse.json(
@@ -93,10 +93,10 @@ export async function GET(req: NextRequest) {
 
     let categoriesById = new Map<string, ICategory & { _id: any }>();
     if (categoryIds.length) {
-      const cats = (await Category.find({
+      const cats: (ICategory & { _id: any })[] = await Category.find({
         categoryId: { $in: categoryIds },
         isDeleted: false,
-      }).lean()) as unknown as (ICategory & { _id: any })[];
+      }).lean();
       for (const c of cats) {
         categoriesById.set(c.categoryId, c);
       }

@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
-import { ShoppingCart, X, Filter, ChevronDown, ChevronUp } from 'lucide-react';
+import { useWishlist } from '@/context/WishlistContext';
+import { ShoppingCart, X, Filter, ChevronDown, ChevronUp, Heart } from 'lucide-react';
 
 type Product = {
   id: string | number;
@@ -27,6 +28,7 @@ export default function ProductsPage() {
   });
   const [showFilters, setShowFilters] = useState(false);
   const { addToCart } = useCart();
+  const { isInWishlist, toggleWishlist, isLoading: wishlistLoading } = useWishlist();
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -124,6 +126,20 @@ export default function ProductsPage() {
                           {product.off}% OFF
                         </div>
                       )}
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleWishlist(product.id.toString());
+                        }}
+                        disabled={wishlistLoading}
+                        className={`absolute top-2 left-2 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-md transition-colors ${
+                          isInWishlist(product.id.toString()) ? 'text-red-500' : 'text-gray-400 hover:text-red-500'
+                        }`}
+                        aria-label={isInWishlist(product.id.toString()) ? 'Remove from wishlist' : 'Add to wishlist'}
+                      >
+                        <Heart size={18} className={isInWishlist(product.id.toString()) ? 'fill-current' : ''} />
+                      </button>
                     </div>
                   </Link>
                   <div className="p-4">

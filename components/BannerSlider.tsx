@@ -113,10 +113,7 @@ export default function BannerSlider() {
             LIMITED TIME OFFER
           </div>
           <h2 className="text-2xl md:text-4xl font-bold mb-3">20% OFF on your first purchase</h2>
-          <p className="text-lg md:text-xl mb-6">Use code <span className="font-mono bg-black/20 px-2 py-1 rounded">FIRST20</span> at checkout</p>
-          <button className="bg-white text-green-700 font-semibold px-6 py-3 rounded-full hover:bg-green-50 transition-colors">
-            Shop Now
-          </button>
+          <p className="text-lg md:text-xl mb-6">Use code <span className="font-mono bg-black/20 px-2 py-1 rounded">FIRST20</span> at checkout</p>        
         </div>
       </div>
     );
@@ -203,10 +200,7 @@ export default function BannerSlider() {
                   <div className="mb-4 text-lg md:text-xl font-medium text-white drop-shadow-md">
                     Offer valid from {new Date(banner.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })} to {new Date(banner.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </div>
-                )}
-                <button className="mt-4 bg-white text-green-700 font-semibold px-8 py-3 rounded-full hover:bg-green-50 transition-all transform hover:scale-105">
-                  Shop Now
-                </button>
+                )}          
               </div>
             </div>
           </div>

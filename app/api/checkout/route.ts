@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import Cart from '@/models/cart';
 import Order from '@/models/order';
@@ -62,12 +63,12 @@ export async function POST(req: NextRequest) {
         }
 
         // Get product details and validate
-        const productIds = cart.items.map((item: any) => item.productId);
+        const productIds = cart.items.map((item) => item.productId);
         const products = await Product.find({ productId: { $in: productIds }, isDeleted: false }).lean();
         const productMap = new Map(products.map((p) => [p.productId, p]));
 
         // Build order items
-        const orderItems = cart.items.map((item: any) => {
+        const orderItems = cart.items.map((item) => {
             const product = productMap.get(item.productId);
             if (!product) {
                 throw new Error(`Product ${item.productId} not found or unavailable`);
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Calculate subtotal
-        const subtotal = orderItems.reduce((sum: number, item: any) => sum + item.total, 0);
+        const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
 
         // Apply coupon if provided
         let discount = 0;
@@ -132,6 +133,72 @@ export async function POST(req: NextRequest) {
         // Calculate total
         const total = Math.max(0, subtotal - discount - rewardDiscount + deliveryCharges);
 
+        // Start a transaction
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            // Verify product availability and update quantities
+            for (const item of cart.items) {
+                const product = await Product.findOne({ productId: item.productId, isDeleted: false }).session(session);
+                
+                if (!product) {
+                    throw new Error(`Product ${item.productId} not found or unavailable`);
+                }
+
+                // Find the appropriate weight option or use default quantity
+                let availableQuantity = product.quantity; // Default quantity
+                
+                if (item.weightOption && product.weightVsPrice) {
+                    const weightOption = product.weightVsPrice.find(
+                        (wp: any) => wp.weight === item.weightOption
+                    );
+                    if (weightOption) {
+                        availableQuantity = weightOption.quantity || 0;
+                    }
+                }
+
+                // Check if enough stock is available
+                if (availableQuantity < item.quantity) {
+                    throw new Error(`Insufficient stock for ${product.title}${item.weightOption ? ` (${item.weightOption})` : ''}. Available: ${availableQuantity}, Requested: ${item.quantity}`);
+                }
+
+                // Update the quantity
+                if (item.weightOption && product.weightVsPrice) {
+                    // Update quantity for specific weight option
+                    const weightOptionIndex = product.weightVsPrice.findIndex(
+                        (wp: any) => wp.weight === item.weightOption
+                    );
+                    if (weightOptionIndex !== -1) {
+                        product.weightVsPrice[weightOptionIndex].quantity -= item.quantity;
+                        // Ensure quantity doesn't go below 0
+                        if (product.weightVsPrice[weightOptionIndex].quantity < 0) {
+                            product.weightVsPrice[weightOptionIndex].quantity = 0;
+                        }
+                    }
+                } else {
+                    // Update default quantity
+                    product.quantity -= item.quantity;
+                    // Ensure quantity doesn't go below 0
+                    if (product.quantity < 0) {
+                        product.quantity = 0;
+                    }
+                }
+
+                // Save the updated product
+                await product.save({ session });
+            }
+
+            // If we get here, all products are available and quantities have been updated
+            await session.commitTransaction();
+            session.endSession();
+        } catch (error) {
+            // If any error occurs, abort the transaction
+            await session.abortTransaction();
+            session.endSession();
+            throw error; // Re-throw to be caught by the outer try-catch
+        }
+
         // Create order
         const order = new Order({
             userId,
@@ -161,9 +228,11 @@ export async function POST(req: NextRequest) {
 
         await order.save();
 
-        // Clear cart
-        cart.items = [];
-        await cart.save();
+        // Clear cart using a new session to avoid transaction conflicts
+        await Cart.updateOne(
+            { _id: cart._id },
+            { $set: { items: [] } }
+        );
 
         // Calculate and award rewards for this order
         const rewardCalc = await calculateRewardsForOrder(userId, total);

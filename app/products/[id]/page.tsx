@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 import { toast } from 'react-hot-toast';
 
 type Product = {
@@ -64,6 +65,7 @@ export default function ProductDetails() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [scale, setScale] = useState(1);
   const { addToCart } = useCart();
+  const { isInWishlist, toggleWishlist, isLoading: wishlistLoading } = useWishlist();
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -186,6 +188,12 @@ export default function ProductDetails() {
     } else {
       toast.success('Product added to cart!');
     }
+  };
+
+  const handleWishlistToggle = async () => {
+    if (!product) return;
+    const productId = product.productId || product._id;
+    await toggleWishlist(productId);
   };
 
   if (loading) {
@@ -337,13 +345,13 @@ export default function ProductDetails() {
                   <Star
                     key={i}
                     className={`w-5 h-5 ${
-                      i < Math.floor(product.rating ?? 0) ? 'text-yellow-400' : 'text-gray-300'
+                      i < Math.floor(product.rating) ? 'text-yellow-400' : 'text-gray-300'
                     }`}
-                    fill={i < Math.floor(product.rating ?? 0) ? 'currentColor' : 'none'}
+                    fill={i < Math.floor(product.rating) ? 'currentColor' : 'none'}
                   />
                 ))}
                 <span className="ml-2 text-sm text-gray-500">
-                  {(product.rating ?? 0) > 0 ? `${(product.rating ?? 0).toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
+                  {product.rating > 0 ? `${product.rating.toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
                 </span>
               </div>
             </div>
@@ -413,6 +421,9 @@ export default function ProductDetails() {
               <div className="flex flex-wrap gap-3">
                 {(() => {
                   const isOutOfStock = !product.weightVsPrice?.[selectedWeight]?.quantity || product.weightVsPrice[selectedWeight].quantity <= 0;
+                  const productId = product.productId || product._id;
+                  const inWishlist = isInWishlist(productId);
+                  
                   return (
                     <>
                       <Button 
@@ -428,6 +439,17 @@ export default function ProductDetails() {
                         disabled={isOutOfStock}
                       >
                         Buy Now
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={handleWishlistToggle}
+                        disabled={wishlistLoading}
+                        className={`px-4 ${inWishlist ? 'text-red-500 border-red-500 hover:bg-red-50' : ''}`}
+                        aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
+                      >
+                        <Heart 
+                          className={`w-5 h-5 ${inWishlist ? 'fill-current' : ''}`}
+                        />
                       </Button>
                     </>
                   );

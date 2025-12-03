@@ -41,11 +41,11 @@ export async function calculateRewardsForOrder(
     }
 
     // Check minimum order value
-    if (orderTotal < (config as any).minOrderForReward) {
+    if (orderTotal < config.minOrderForReward) {
         return {
             eligible: false,
             points: 0,
-            reason: `Minimum order value of ₹${(config as any).minOrderForReward} required to earn rewards`,
+            reason: `Minimum order value of ₹${config.minOrderForReward} required to earn rewards`,
         };
     }
 
@@ -57,13 +57,13 @@ export async function calculateRewardsForOrder(
         return {
             eligible: false,
             points: 0,
-            reason: `Complete ${(config as any).eligibilityAfterOrders} orders to start earning rewards`,
+            reason: `Complete ${config.eligibilityAfterOrders} orders to start earning rewards`,
         };
     }
 
     // Calculate points
-    const pointsFromOrder = (config as any).pointsPerOrder;
-    const pointsFromAmount = Math.floor(orderTotal * (config as any).pointsPerRupee);
+    const pointsFromOrder = config.pointsPerOrder;
+    const pointsFromAmount = Math.floor(orderTotal * config.pointsPerRupee);
     const totalPoints = pointsFromOrder + pointsFromAmount;
 
     return {
@@ -131,16 +131,16 @@ export async function redeemRewards(
     }
 
     // Check minimum redemption
-    if (points < (config as any).minRedemptionPoints) {
+    if (points < config.minRedemptionPoints) {
         return {
             success: false,
             discountAmount: 0,
-            message: `Minimum ${(config as any).minRedemptionPoints} points required for redemption`,
+            message: `Minimum ${config.minRedemptionPoints} points required for redemption`,
         };
     }
 
     // Calculate discount amount
-    const discountAmount = Math.floor(points / (config as any).redemptionRate);
+    const discountAmount = Math.floor(points / config.redemptionRate);
 
     // Deduct points
     reward.balance -= points;

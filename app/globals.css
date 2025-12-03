@@ -21,6 +21,46 @@
 
 body {
   background: var(--background);
-  color: var(--foreground);
+  color: #111827; /* Force dark text */
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Global input and textarea styling */
+input,
+textarea,
+select {
+  color: #111827 !important; /* text-gray-900 */
+  background-color: white !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6B7280 !important; /* text-gray-500 for placeholder */
+}
+
+/* Ensure all text elements are dark by default */
+p, span, label, div, h1, h2, h3, h4, h5, h6, a, button {
+  color: inherit;
+}
+
+/* Force dark text for common utility classes */
+.text-gray-400 {
+  color: #4B5563 !important; /* Darker gray-600 */
+}
+
+.text-gray-500 {
+  color: #374151 !important; /* Darker gray-700 */
+}
+
+.text-gray-600 {
+  color: #1F2937 !important; /* Darker gray-800 */
+}
+
+.text-gray-700 {
+  color: #111827 !important; /* Darkest gray-900 */
+}
+
+/* Ensure white text stays white when explicitly set */
+.text-white {
+  color: white !important;
 }

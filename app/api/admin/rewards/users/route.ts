@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
                     message: 'User reward balance adjusted successfully',
                     data: {
                         userId,
-                        newBalance: (reward as any)?.balance || 0,
+                        newBalance: reward?.balance || 0,
                         adjustment: amount,
                         reason,
                     },

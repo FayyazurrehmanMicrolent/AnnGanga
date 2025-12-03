@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 import { addToCart as addToCartUtil } from '@/lib/cart-utils';
 import { toast } from 'react-hot-toast';
 import CartCount from '@/components/CartCount';
@@ -307,7 +308,7 @@ export default function HomePage() {
       <section className="py-12">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Featured Products</h2>
+            <h2 className="text-2xl font-bold text-black">Featured Products</h2>
             {featuredProducts.length > 0 && (
               <Link 
                 href="/products" 
@@ -351,6 +352,7 @@ function ProductCard({
 }) {
   const [isAdding, setIsAdding] = useState(false);
   const { addToCart } = useCart();
+  const { isInWishlist, toggleWishlist, isLoading: wishlistLoading } = useWishlist();
 
   const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -377,6 +379,14 @@ function ProductCard({
     }
   };
 
+  const handleWishlistToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await toggleWishlist(id.toString());
+  };
+
+  const inWishlist = isInWishlist(id.toString());
+
   return (
     <div
       className="rounded-xl border p-3 hover:shadow-lg transition flex flex-col h-full"
@@ -397,20 +407,18 @@ function ProductCard({
             </p>
           </div>
           <button 
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              // Handle wishlist add
-            }}
-            className="text-gray-400 hover:text-red-500 transition-colors"
+            onClick={handleWishlistToggle}
+            disabled={wishlistLoading}
+            className={`transition-colors ${inWishlist ? 'text-red-500' : 'text-gray-900 hover:text-red-500'}`}
+            aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
           >
-            <Heart size={18} />
+            <Heart size={18} className={inWishlist ? 'fill-current' : ''} />
           </button>
         </div>
 
         <div className="flex items-center justify-between mt-3">
           <div>
-            <span className="font-bold text-base">₹{price.toFixed(2)}</span>
+            <span className="font-bold  text-black">₹{price.toFixed(2)}</span>
             {oldPrice > price && (
               <span className="text-xs line-through ml-2" style={{ color: theme.muted }}>
                 ₹{oldPrice.toFixed(2)}
@@ -431,9 +439,16 @@ function ProductCard({
       <button
         onClick={handleAddToCart}
         disabled={isAdding}
-        className="mt-4 w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="mt-4 w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
       >
-        {isAdding ? 'Adding...' : 'Add to Cart'}
+        {isAdding ? (
+          'Adding...'
+        ) : (
+          <>
+            <ShoppingCart className="w-4 h-4 mr-1.5" />
+            Add to Cart
+          </>
+        )}
       </button>
     </div>
   );
