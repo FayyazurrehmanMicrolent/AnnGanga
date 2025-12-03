@@ -306,14 +306,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const clearCart = async () => {
-    if (!checkAuthToken()) {
+    if (!checkAuth()) {
       router.push('/login');
       toast.error('Your session has expired. Please log in again.');
       return;
     }
 
     if (!isAuthenticated || !user?._id || !token) {
-      if (checkAuthToken()) {
+      if (checkAuth()) {
         await refreshCart();
         return clearCart();
       }

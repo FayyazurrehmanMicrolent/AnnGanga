@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import Reward from '@/models/reward';
+import Reward, { IReward } from '@/models/reward';
 import User from '@/models/users';
 import { adjustRewardBalance } from '@/lib/rewards';
 
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
             await adjustRewardBalance(userId, Number(amount), String(reason).trim());
 
             // Get updated reward
-            const reward = await Reward.findOne({ userId }).lean();
+            const reward = await Reward.findOne({ userId }).lean() as Pick<IReward, 'balance'> | null;
 
             return NextResponse.json(
                 {

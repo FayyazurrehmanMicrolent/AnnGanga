@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
-import Cart from '@/models/cart';
+import Cart, { ICart, ICartItem } from '@/models/cart';
 import Order from '@/models/order';
 import Product from '@/models/product';
 import Coupon from '@/models/coupon';
@@ -63,12 +63,12 @@ export async function POST(req: NextRequest) {
         }
 
         // Get product details and validate
-        const productIds = cart.items.map((item) => item.productId);
+        const productIds = cart.items.map((item: ICartItem) => item.productId);
         const products = await Product.find({ productId: { $in: productIds }, isDeleted: false }).lean();
         const productMap = new Map(products.map((p) => [p.productId, p]));
 
         // Build order items
-        const orderItems = cart.items.map((item) => {
+        const orderItems = cart.items.map((item: ICartItem) => {
             const product = productMap.get(item.productId);
             if (!product) {
                 throw new Error(`Product ${item.productId} not found or unavailable`);
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Calculate subtotal
-        const subtotal = orderItems.reduce((sum, item) => sum + item.total, 0);
+        const subtotal = orderItems.reduce((sum: number, item: any) => sum + item.total, 0);
 
         // Apply coupon if provided
         let discount = 0;

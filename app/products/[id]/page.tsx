@@ -345,13 +345,13 @@ export default function ProductDetails() {
                   <Star
                     key={i}
                     className={`w-5 h-5 ${
-                      i < Math.floor(product.rating) ? 'text-yellow-400' : 'text-gray-300'
+                      i < Math.floor(product.rating || 0) ? 'text-yellow-400' : 'text-gray-300'
                     }`}
-                    fill={i < Math.floor(product.rating) ? 'currentColor' : 'none'}
+                    fill={i < Math.floor(product.rating || 0) ? 'currentColor' : 'none'}
                   />
                 ))}
                 <span className="ml-2 text-sm text-gray-500">
-                  {product.rating > 0 ? `${product.rating.toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
+                  {product.rating && product.rating > 0 ? `${product.rating.toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
                 </span>
               </div>
             </div>

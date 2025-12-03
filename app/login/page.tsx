@@ -288,7 +288,6 @@ export default function LoginPage() {
                                                 if (el) {
                                                     otpInputs.current[index] = el;
                                                 }
-                                                return el;
                                             }}
                                             className="w-full h-12 text-center text-xl text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                                             disabled={isLoading}
