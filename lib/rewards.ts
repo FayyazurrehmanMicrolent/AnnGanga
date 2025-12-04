@@ -1,6 +1,6 @@
 import Reward from '@/models/reward';
 import RewardTransaction from '@/models/rewardTransaction';
-import RewardConfig, { IRewardConfig } from '@/models/rewardConfig';
+import RewardConfig from '@/models/rewardConfig';
 import connectDB from './db';
 
 /**
@@ -35,7 +35,7 @@ export async function calculateRewardsForOrder(
 ): Promise<{ eligible: boolean; points: number; reason?: string }> {
     await connectDB();
 
-    const config = await getRewardConfig() as Pick<IRewardConfig, 'minOrderForReward' | 'eligibilityAfterOrders' | 'pointsPerOrder' | 'pointsPerRupee'> | null;
+    const config = await getRewardConfig() as any;
     if (!config) {
         return { eligible: false, points: 0, reason: 'Rewards system is not active' };
     }
@@ -114,7 +114,7 @@ export async function redeemRewards(
 ): Promise<{ success: boolean; discountAmount: number; message?: string }> {
     await connectDB();
 
-    const config = await getRewardConfig() as Pick<IRewardConfig, 'minRedemptionPoints' | 'redemptionRate'> | null;
+    const config = await getRewardConfig() as any;
     if (!config) {
         return { success: false, discountAmount: 0, message: 'Rewards system is not active' };
     }

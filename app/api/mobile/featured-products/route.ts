@@ -91,13 +91,13 @@ export async function GET(req: NextRequest) {
       )
     );
 
-    let categoriesById = new Map<string, any>();
+    let categoriesById = new Map<string, ICategory & { _id: any }>();
     if (categoryIds.length) {
       const cats = await Category.find({
         categoryId: { $in: categoryIds },
         isDeleted: false,
       }).lean();
-      for (const c of cats) {
+      for (const c of cats as any[]) {
         categoriesById.set(c.categoryId, c);
       }
     }

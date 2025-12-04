@@ -59,8 +59,9 @@ export async function GET(req: NextRequest) {
     const id = url.searchParams.get('id') || url.searchParams.get('productId');
     const categoryId = url.searchParams.get('categoryId');
     const dietaryParam = url.searchParams.get('dietary');
+    const tag = url.searchParams.get('tag');
 
-    console.log('Request parameters:', { id, categoryId, dietaryParam });
+    console.log('Request parameters:', { id, categoryId, dietaryParam, tag });
 
     if (id) {
       console.log('Looking up product with ID:', id);
@@ -96,10 +97,15 @@ export async function GET(req: NextRequest) {
       if (d.length === 1) filter.dietary = d[0];
       else if (d.length > 1) filter.dietary = { $in: d };
     }
+    
+    // Add tag filtering
+    if (tag) {
+      filter.tags = tag;
+    }
 
     let products = await Product.find(filter).sort({ createdAt: -1 }).lean();
     try {
-      const prioritySet = new Set(['arrival', 'featured']);
+      const prioritySet = new Set(['arrival', 'featured', 'hamper']);
       const isPriority = (p: any) => Array.isArray(p?.tags) && p.tags.some((t: any) => prioritySet.has(String(t || '').trim().toLowerCase()));
       const prioritized = products.filter(isPriority);
       const rest = products.filter((p: any) => !isPriority(p));

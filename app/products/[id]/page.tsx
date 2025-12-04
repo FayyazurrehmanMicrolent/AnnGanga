@@ -351,7 +351,7 @@ export default function ProductDetails() {
                   />
                 ))}
                 <span className="ml-2 text-sm text-gray-500">
-                  {product.rating && product.rating > 0 ? `${product.rating.toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
+                  {(product.rating || 0) > 0 ? `${(product.rating || 0).toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
                 </span>
               </div>
             </div>

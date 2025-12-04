@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -99,14 +99,89 @@ export default function HomePage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const { itemCount } = useCart();
-  const [activeCategory, setActiveCategory] = useState("all");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [featuredProducts, setFeaturedProducts] = useState<any[]>([]);
+  interface ProductsByTag {
+    featured: any[];
+    arrival: any[];
+    hamper: any[];
+    [key: string]: any[]; // Index signature for dynamic access
+  }
+
+  const [productsByTag, setProductsByTag] = useState<ProductsByTag>({
+    featured: [],
+    arrival: [],
+    hamper: []
+  });
   const [loading, setLoading] = useState({
     categories: true,
     products: true
   });
   const [error, setError] = useState<string | null>(null);
+
+  const fetchProductsByTag = useCallback(async (categoryId: string | null = null) => {
+    try {
+      const tags = ['featured', 'arrival', 'hamper'];
+      const newProductsByTag: ProductsByTag = {
+        featured: [],
+        arrival: [],
+        hamper: []
+      };
+
+      // Fetch products for each tag with category filter if provided
+      await Promise.all(tags.map(async (tag) => {
+        try {
+          const url = new URL('/api/product', window.location.origin);
+          url.searchParams.append('tag', tag);
+          url.searchParams.append('limit', '8');
+          if (categoryId) {
+            url.searchParams.append('categoryId', categoryId);
+          }
+
+          const response = await fetch(url.toString());
+          if (!response.ok) throw new Error(`Failed to fetch ${tag} products`);
+
+          const data = await response.json();
+          if (data.status === 200) {
+            if (tag === 'featured' || tag === 'arrival' || tag === 'hamper') {
+              newProductsByTag[tag] = data.data.map((product: any) => ({
+                id: product.productId || product._id,
+                name: product.title,
+                weight: product.weightVsPrice?.[0]?.weight || '1 kg',
+                price: product.actualPrice || 0,
+                oldPrice: product.mrp || 0,
+                off: product.mrp > 0
+                  ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
+                  : 0,
+                img: product.images?.[0] || '/placeholder/spice.jpg',
+                images: product.images || []
+              }));
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching ${tag} products:`, err);
+        }
+      }));
+
+      setProductsByTag(newProductsByTag);
+    } catch (err) {
+      console.error('Error in fetchProductsByTag:', err);
+      // Fallback to static data if API fails
+      setProductsByTag({
+        featured: [],
+        arrival: [],
+        hamper: []
+      });
+    } finally {
+      setLoading(prev => ({ ...prev, products: false }));
+    }
+  }, []);
+
+  const handleCategorySelect = useCallback(async (categoryId: string | null) => {
+    setActiveCategory(categoryId);
+    setLoading(prev => ({ ...prev, products: true }));
+    await fetchProductsByTag(categoryId);
+  }, [fetchProductsByTag]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -129,51 +204,23 @@ export default function HomePage() {
       }
     };
 
-    const fetchFeaturedProducts = async () => {
-      try {
-        // First, fetch all products
-        const response = await fetch('/api/product?limit=100'); // Increased limit to get more products
-        if (!response.ok) {
-          throw new Error('Failed to fetch products');
+    const init = async () => {
+      await fetchCategories();
+
+      // Get category from URL if present
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        const categoryId = url.searchParams.get('categoryId');
+        if (categoryId) {
+          await handleCategorySelect(categoryId);
+          return;
         }
-        const data = await response.json();
-        if (data.status === 200) {
-          // Filter products that have either 'featured' or 'arrival' tag
-          const featuredProducts = data.data.filter((product: any) => {
-            const tags = product.tags || [];
-            return tags.includes('featured') || tags.includes('arrival');
-          }).slice(0, 8); // Limit to 8 products
-          
-          // Map the filtered products to match our ProductCard props
-          const formattedProducts = featuredProducts.map((product: any) => ({
-            id: product.productId || product._id,
-            name: product.title,
-            weight: product.weightVsPrice?.[0]?.weight || '1 kg',
-            price: product.actualPrice || 0,
-            oldPrice: product.mrp || 0,
-            off: product.mrp > 0 
-              ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
-              : 0,
-            img: product.images?.[0] || '/placeholder/spice.jpg',
-            images: product.images || []
-          }));
-          setFeaturedProducts(formattedProducts);
-        } else {
-          throw new Error(data.message || 'Failed to load featured products');
-        }
-      } catch (err) {
-        console.error('Error fetching featured products:', err);
-        // Don't set error to state to prevent blocking the UI
-        // Just use the static featured data as fallback
-        setFeaturedProducts(featured);
-      } finally {
-        setLoading(prev => ({ ...prev, products: false }));
       }
+      await fetchProductsByTag(null);
     };
 
-    fetchCategories();
-    fetchFeaturedProducts();
-  }, []);
+    init();
+  }, [fetchProductsByTag, handleCategorySelect]);
 
   const navItems = [
     { label: "Products", href: "/products" },
@@ -222,7 +269,7 @@ export default function HomePage() {
                 <span>{item.label}</span>
               </Link>
             ))}
-            
+
             {/* Categories Section */}
             <div className="mt-4 pt-4 border-t border-gray-100">
               <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Categories</h3>
@@ -235,9 +282,8 @@ export default function HomePage() {
                   <Link
                     key={category.categoryId}
                     href={`/category/${category.categoryId}`}
-                    className={`block px-4 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors ${
-                      activeCategory === category.categoryId ? "text-green-600 font-medium" : "text-gray-700"
-                    }`}
+                    className={`block px-4 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors ${activeCategory === category.categoryId ? "text-green-600 font-medium" : "text-gray-700"
+                      }`}
                     onClick={() => setSidebar(false)}
                   >
                     {category.name}
@@ -267,7 +313,7 @@ export default function HomePage() {
         />
       )}
 
-      
+
 
       {/* ------- BANNER SLIDER ------- */}
       <section >
@@ -300,32 +346,51 @@ export default function HomePage() {
           <h2 className="text-3xl font-bold mb-2 text-start" style={{ color: theme.text }}>
             Our Categories
           </h2>
-          <CategorySlider categories={categories} theme={theme} />
+          <CategorySlider
+            categories={categories}
+            theme={theme}
+            activeCategory={activeCategory}
+            onCategorySelect={handleCategorySelect}
+          />
         </div>
       </section>
 
-      {/* ------- FEATURED ------- */}
-      <section className="py-12">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-black">Featured Products</h2>
-            {featuredProducts.length > 0 && (
-              <Link 
-                href="/products" 
-                className="text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
-              >
-                View All <ChevronRight size={16} />
-              </Link>
-            )}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {featuredProducts.slice(0, 8).map((product) => (
-              <ProductCard key={product.id} {...product} />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ------- PRODUCT SECTIONS ------- */}
+      {(['featured', 'arrival', 'hamper'] as const).map((tag) => {
+        const products = productsByTag[tag];
+        
+        const titleMap = {
+          'featured': 'Featured Products',
+          'arrival': 'New Arrivals',
+          'hamper': 'Gift Hampers'
+        } as const;
 
+        return (
+          <section key={tag} className="py-12 px-4">
+            <div className="max-w-7xl mx-auto">
+              <h2 className="text-2xl font-bold mb-6">{titleMap[tag]}</h2>
+              {(!products || products.length === 0) ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 dark:text-gray-400">No {titleMap[tag].toLowerCase()} found{activeCategory ? ' in this category' : ''}.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {loading.products ? (
+                    // Skeleton loaders
+                    [...Array(4)].map((_, i) => (
+                      <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded-lg h-64"></div>
+                    ))
+                  ) : (
+                    products.map((product) => (
+                      <ProductCard key={product.id} {...product} />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -357,7 +422,7 @@ function ProductCard({
   const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     setIsAdding(true);
     try {
       const success = await addToCart({
@@ -368,7 +433,7 @@ function ProductCard({
         productName: name,
         productImage: img || (images[0] || ''),
       });
-      
+
       if (success) {
         // Success feedback is handled by the toast in addToCart
       }
@@ -406,7 +471,7 @@ function ProductCard({
               {weight}
             </p>
           </div>
-          <button 
+          <button
             onClick={handleWishlistToggle}
             disabled={wishlistLoading}
             className={`transition-colors ${inWishlist ? 'text-red-500' : 'text-gray-900 hover:text-red-500'}`}
@@ -435,7 +500,7 @@ function ProductCard({
           )}
         </div>
       </Link>
-      
+
       <button
         onClick={handleAddToCart}
         disabled={isAdding}

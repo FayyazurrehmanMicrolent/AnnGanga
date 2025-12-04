@@ -22,9 +22,16 @@ interface CategorySliderProps {
     primary: any;
     text: string;
   };
+  activeCategory: string | null;
+  onCategorySelect: (categoryId: string | null) => void;
 }
 
-const CategorySlider: React.FC<CategorySliderProps> = ({ categories, theme }) => {
+const CategorySlider: React.FC<CategorySliderProps> = ({ 
+  categories, 
+  theme, 
+  activeCategory, 
+  onCategorySelect 
+}) => {
   const settings = {
     dots: false,
     infinite: true,
@@ -68,103 +75,106 @@ const CategorySlider: React.FC<CategorySliderProps> = ({ categories, theme }) =>
   };
 
   return (
-    <div 
-      className="w-full py-8 relative group overflow-hidden"
-      onMouseEnter={() => {
-        const slider = document.querySelector('.slick-slider');
-        if (slider) {
-          slider.dispatchEvent(new Event('mouseenter'));
-        }
-      }}
-      onMouseLeave={() => {
-        const slider = document.querySelector('.slick-slider');
-        if (slider) {
-          slider.dispatchEvent(new Event('mouseleave'));
-        }
-      }}
-    >
-      <style jsx global>{`
-        .slick-slide > div {
-          padding: 0 12px;
-        }
-        .slick-track {
-          display: flex !important;
-          align-items: center;
-        }
-        .slick-dots {
-          bottom: -30px !important;
-        }
-        .slick-dots li button:before {
-          font-size: 10px;
-          color: ${theme.text}80 !important;
-          opacity: 1 !important;
-        }
-        .slick-dots li.slick-active button:before {
-          color: ${theme.primary} !important;
-        }
-        .slick-slide {
-          transition: transform 0.3s ease, opacity 0.3s ease;
-          opacity: 0.8;
-        }
-        .slick-slide:hover {
-          opacity: 1;
-        }
-        .slick-active {
-          opacity: 1;
-          transform: scale(1.02);
-        }
-        .slick-center {
-          transform: scale(1.05);
-          opacity: 1;
-        }
-      `}</style>
-      <Slider {...settings}>
-        {categories.map((category) => (
-          <div key={category.categoryId} className="px-2">
-            <div 
-              className="flex flex-col items-center justify-center cursor-pointer p-4 transition-all duration-300 ease-out transform hover:scale-110"
-              style={{
-                width: '140px',
-                height: '140px',
-                borderRadius: '50%',
-                transition: 'all 0.3s ease-out',
-              }}
-            >
-              <div className="w-16 h-16 mb-2 rounded-full overflow-hidden flex items-center justify-center">
-                {category.image ? (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <img
-                      src={category.image}
-                      alt={category.name}
-                      className="w-12 h-12 object-cover rounded-full"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.onerror = null;
-                        target.src = '/placeholder/category-placeholder.svg';
-                      }}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover'
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="w-full h-full rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                    <Package className="w-8 h-8 text-gray-400" />
-                  </div>
-                )}
-              </div>
-              <p 
-                className="text-sm font-medium text-center transition-colors duration-300 hover:text-primary"
-                style={{ color: theme.text }}
+    <div className="w-[90%] mx-auto py-4 relative group overflow-hidden">
+      <div className="flex justify-center mb-4">
+        <button
+          onClick={() => onCategorySelect(null)}
+          className={`px-4 py-2 mx-1 rounded-full text-sm font-medium transition-colors ${
+            activeCategory === null 
+              ? 'bg-green-600 text-white' 
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          All Categories
+        </button>
+      </div>
+      <div
+        onMouseEnter={() => {
+          const slider = document.querySelector('.slick-slider');
+          if (slider) {
+            slider.dispatchEvent(new Event('mouseenter'));
+          }
+        }}
+        onMouseLeave={() => {
+          const slider = document.querySelector('.slick-slider');
+          if (slider) {
+            slider.dispatchEvent(new Event('mouseleave'));
+          }
+        }}
+      >
+        <style jsx global>{`
+          .slick-slide > div {
+            padding: 0 12px;
+          }
+          .slick-track {
+            display: flex !important;
+            align-items: center;
+          }
+          .slick-dots {
+            bottom: -30px !important;
+          }
+          .slick-dots li button:before {
+            font-size: 10px;
+            color: ${theme.text}80 !important;
+            opacity: 1 !important;
+          }
+          .slick-dots li.slick-active button:before {
+            color: ${theme.primary} !important;
+          }
+          .slick-slide {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0.8;
+          }
+          .slick-slide:hover {
+            opacity: 1;
+          }
+          .slick-active {
+            opacity: 1;
+            transform: scale(1.02);
+          }
+          .slick-center {
+            transform: scale(1.05);
+            opacity: 1;
+          }
+        `}</style>
+        <Slider {...settings}>
+          {categories.map((category) => (
+            <div key={category._id} className="px-2">
+              <div 
+                className="flex flex-col items-center cursor-pointer"
+                onClick={() => onCategorySelect(category._id)}
               >
-                {category.name}
-              </p>
+                <div 
+                  className={`w-16 h-16 rounded-full flex items-center justify-center mb-2 overflow-hidden transition-all ${
+                    (activeCategory === category._id || activeCategory === category.categoryId) 
+                      ? 'ring-2 ring-green-500 ring-offset-2' 
+                      : 'bg-gray-100 hover:bg-gray-50'
+                  }`}
+                >
+                  {category.image ? (
+                    <img 
+                      src={category.image} 
+                      alt={category.name} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Package className="w-6 h-6 text-gray-400" />
+                  )}
+                </div>
+                <span 
+                  className={`text-sm text-center ${
+                    (activeCategory === category._id || activeCategory === category.categoryId) 
+                      ? 'font-semibold text-green-700' 
+                      : 'text-gray-700'
+                  }`}
+                >
+                  {category.name}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
-      </Slider>
+          ))}
+        </Slider>
+      </div>
     </div>
   );
 };

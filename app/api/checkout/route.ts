@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
-import Cart, { ICart, ICartItem } from '@/models/cart';
+import Cart from '@/models/cart';
 import Order from '@/models/order';
 import Product from '@/models/product';
 import Coupon from '@/models/coupon';
@@ -63,12 +63,12 @@ export async function POST(req: NextRequest) {
         }
 
         // Get product details and validate
-        const productIds = cart.items.map((item: ICartItem) => item.productId);
+        const productIds = cart.items.map((item: { productId: string }) => item.productId);
         const products = await Product.find({ productId: { $in: productIds }, isDeleted: false }).lean();
-        const productMap = new Map(products.map((p) => [p.productId, p]));
+        const productMap = new Map(products.map((p: any) => [p.productId, p]));
 
         // Build order items
-        const orderItems = cart.items.map((item: ICartItem) => {
+        const orderItems = cart.items.map((item: any) => {
             const product = productMap.get(item.productId);
             if (!product) {
                 throw new Error(`Product ${item.productId} not found or unavailable`);
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
 
         try {
             // Verify product availability and update quantities
-            for (const item of cart.items) {
+            for (const item of cart.items as any[]) {
                 const product = await Product.findOne({ productId: item.productId, isDeleted: false }).session(session);
                 
                 if (!product) {
