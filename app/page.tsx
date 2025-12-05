@@ -143,8 +143,19 @@ export default function HomePage() {
         // If filtered by category, handle the response format
         if (categoryId) {
           // Check if the response has tags (regular response) or is an array (filtered response)
-          if (data.data && data.data.tags) {
-            // Regular response with tags
+          if (data.data && Array.isArray(data.data.tags)) {
+            // New array structure: tags: [{ tag: 'featured', products: [...] }]
+            const tagsObject: any = {};
+            data.data.tags.forEach((tagItem: any) => {
+              tagsObject[tagItem.tag] = {
+                products: tagItem.products || [],
+                tag: tagItem.tag,
+                title: tagItem.tag.charAt(0).toUpperCase() + tagItem.tag.slice(1)
+              };
+            });
+            setProductsByTag(tagsObject);
+          } else if (data.data && data.data.tags && typeof data.data.tags === 'object') {
+            // Old object structure (backwards compatibility)
             setProductsByTag(data.data.tags || {});
           } else if (Array.isArray(data.data)) {
             // Direct array response
@@ -184,7 +195,21 @@ export default function HomePage() {
           }
         } else {
           // Regular non-filtered response
-          setProductsByTag(data.data?.tags || {});
+          if (data.data && Array.isArray(data.data.tags)) {
+            // New array structure: tags: [{ tag: 'featured', products: [...] }]
+            const tagsObject: any = {};
+            data.data.tags.forEach((tagItem: any) => {
+              tagsObject[tagItem.tag] = {
+                products: tagItem.products || [],
+                tag: tagItem.tag,
+                title: tagItem.tag.charAt(0).toUpperCase() + tagItem.tag.slice(1)
+              };
+            });
+            setProductsByTag(tagsObject);
+          } else if (data.data?.tags && typeof data.data.tags === 'object') {
+            // Old object structure (backwards compatibility)
+            setProductsByTag(data.data.tags || {});
+          }
         }
       } else {
         throw new Error(data.message || 'Failed to fetch products');

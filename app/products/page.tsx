@@ -43,8 +43,15 @@ export default function ProductsPage() {
           // Handle different response structures
           let productsData = [];
           
-          // If data is in the format { data: { tags: { [key: string]: { products: [...] } } } }
-          if (data.data && data.data.tags) {
+          // If data is in the format { data: { tags: [{ tag: string, products: [...] }] } }
+          if (data.data && Array.isArray(data.data.tags)) {
+            // Extract all products from all tags
+            productsData = data.data.tags.flatMap(
+              (tagObj: any) => tagObj.products || []
+            );
+          }
+          // If data is in the old format { data: { tags: { [key: string]: { products: [...] } } } }
+          else if (data.data && data.data.tags && typeof data.data.tags === 'object') {
             // Extract all products from all tags
             productsData = Object.values(data.data.tags).flatMap(
               (tag: any) => tag.products || []

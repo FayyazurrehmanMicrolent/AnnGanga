@@ -106,37 +106,41 @@ export async function GET(req: NextRequest) {
     // Get all products matching the filter
     let products = await Product.find(filter).sort({ createdAt: -1 }).lean();
     
-    // Initialize the result object with empty arrays for each tag
-    const result: any = {
-      tags: {}
-    };
-    
-    // Define the tags we want to group by
-    const tagGroups = ['featured', 'arrival', 'hamper'];
-    
-    // Initialize each tag group with an empty products array
-    tagGroups.forEach(tag => {
-      result.tags[tag] = { products: [] };
-    });
-    
     // If categoryId is provided, filter products by category
     if (categoryId) {
       products = products.filter((product: any) => product.categoryId === categoryId);
     }
     
-    // Process each product and add it to the appropriate tag groups
-    products.forEach((product: any) => {
-      if (product.tags && Array.isArray(product.tags)) {
-        // Convert all tags to lowercase for case-insensitive matching
-        const productTags = product.tags.map((t: string) => t?.toLowerCase?.());
-        
-        // Add product to each matching tag group
-        tagGroups.forEach(tag => {
+    // Define the tags we want to group by
+    const tagGroups = ['featured', 'arrival', 'hamper'];
+    
+    // Initialize the result object with tags array
+    const result: any = {
+      tags: []
+    };
+    
+    // Create tag groups with products
+    tagGroups.forEach(tag => {
+      const tagProducts: any[] = [];
+      
+      // Process each product and add it to the appropriate tag group
+      products.forEach((product: any) => {
+        if (product.tags && Array.isArray(product.tags)) {
+          // Convert all tags to lowercase for case-insensitive matching
+          const productTags = product.tags.map((t: string) => t?.toLowerCase?.());
+          
+          // Add product if it matches this tag
           if (productTags.includes(tag)) {
-            result.tags[tag].products.push(product);
+            tagProducts.push(product);
           }
-        });
-      }
+        }
+      });
+      
+      // Add tag group to result
+      result.tags.push({
+        tag: tag,
+        products: tagProducts
+      });
     });
     
     return NextResponse.json({ 
