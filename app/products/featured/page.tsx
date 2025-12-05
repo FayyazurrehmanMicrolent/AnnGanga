@@ -37,14 +37,9 @@ export default function FeaturedProductsPage() {
           // Extract featured products from the response
           let featuredProducts: Product[] = [];
           
-          // Handle new array structure: tags: [{ tag: 'featured', products: [...] }]
-          if (data.data && Array.isArray(data.data.tags)) {
-            const featuredTag = data.data.tags.find((t: any) => t.tag === 'featured');
-            featuredProducts = featuredTag?.products || [];
-          }
-          // Handle old object structure for backwards compatibility
-          else if (data.data && data.data.tags && data.data.tags.featured) {
-            featuredProducts = data.data.tags.featured.products || [];
+          // Handle structure: tags: { featured: [...] }
+          if (data.data && data.data.tags && Array.isArray(data.data.tags.featured)) {
+            featuredProducts = data.data.tags.featured;
           }
           
           setProducts(featuredProducts);

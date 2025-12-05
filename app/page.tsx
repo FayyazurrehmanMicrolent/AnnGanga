@@ -143,20 +143,17 @@ export default function HomePage() {
         // If filtered by category, handle the response format
         if (categoryId) {
           // Check if the response has tags (regular response) or is an array (filtered response)
-          if (data.data && Array.isArray(data.data.tags)) {
-            // New array structure: tags: [{ tag: 'featured', products: [...] }]
+          if (data.data && data.data.tags && typeof data.data.tags === 'object' && !Array.isArray(data.data.tags)) {
+            // Structure: tags: { featured: [...], hamper: [...], arrival: [...] }
             const tagsObject: any = {};
-            data.data.tags.forEach((tagItem: any) => {
-              tagsObject[tagItem.tag] = {
-                products: tagItem.products || [],
-                tag: tagItem.tag,
-                title: tagItem.tag.charAt(0).toUpperCase() + tagItem.tag.slice(1)
+            Object.keys(data.data.tags).forEach(tag => {
+              tagsObject[tag] = {
+                products: data.data.tags[tag] || [],
+                tag: tag,
+                title: tag.charAt(0).toUpperCase() + tag.slice(1)
               };
             });
             setProductsByTag(tagsObject);
-          } else if (data.data && data.data.tags && typeof data.data.tags === 'object') {
-            // Old object structure (backwards compatibility)
-            setProductsByTag(data.data.tags || {});
           } else if (Array.isArray(data.data)) {
             // Direct array response
             if (data.data.length === 0) {
@@ -195,20 +192,17 @@ export default function HomePage() {
           }
         } else {
           // Regular non-filtered response
-          if (data.data && Array.isArray(data.data.tags)) {
-            // New array structure: tags: [{ tag: 'featured', products: [...] }]
+          if (data.data && data.data.tags && typeof data.data.tags === 'object' && !Array.isArray(data.data.tags)) {
+            // Structure: tags: { featured: [...], hamper: [...], arrival: [...] }
             const tagsObject: any = {};
-            data.data.tags.forEach((tagItem: any) => {
-              tagsObject[tagItem.tag] = {
-                products: tagItem.products || [],
-                tag: tagItem.tag,
-                title: tagItem.tag.charAt(0).toUpperCase() + tagItem.tag.slice(1)
+            Object.keys(data.data.tags).forEach(tag => {
+              tagsObject[tag] = {
+                products: data.data.tags[tag] || [],
+                tag: tag,
+                title: tag.charAt(0).toUpperCase() + tag.slice(1)
               };
             });
             setProductsByTag(tagsObject);
-          } else if (data.data?.tags && typeof data.data.tags === 'object') {
-            // Old object structure (backwards compatibility)
-            setProductsByTag(data.data.tags || {});
           }
         }
       } else {

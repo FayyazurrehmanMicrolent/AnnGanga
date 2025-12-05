@@ -37,14 +37,9 @@ export default function HamperProductsPage() {
           // Extract hamper products from the response
           let hamperProducts: Product[] = [];
           
-          // Handle new array structure: tags: [{ tag: 'hamper', products: [...] }]
-          if (data.data && Array.isArray(data.data.tags)) {
-            const hamperTag = data.data.tags.find((t: any) => t.tag === 'hamper');
-            hamperProducts = hamperTag?.products || [];
-          }
-          // Handle old object structure for backwards compatibility
-          else if (data.data && data.data.tags && data.data.tags.hamper) {
-            hamperProducts = data.data.tags.hamper.products || [];
+          // Handle structure: tags: { hamper: [...] }
+          if (data.data && data.data.tags && Array.isArray(data.data.tags.hamper)) {
+            hamperProducts = data.data.tags.hamper;
           }
           
           setProducts(hamperProducts);

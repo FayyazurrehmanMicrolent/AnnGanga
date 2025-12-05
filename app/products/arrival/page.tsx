@@ -37,14 +37,9 @@ export default function ArrivalProductsPage() {
           // Extract arrival products from the response
           let arrivalProducts: Product[] = [];
           
-          // Handle new array structure: tags: [{ tag: 'arrival', products: [...] }]
-          if (data.data && Array.isArray(data.data.tags)) {
-            const arrivalTag = data.data.tags.find((t: any) => t.tag === 'arrival');
-            arrivalProducts = arrivalTag?.products || [];
-          }
-          // Handle old object structure for backwards compatibility
-          else if (data.data && data.data.tags && data.data.tags.arrival) {
-            arrivalProducts = data.data.tags.arrival.products || [];
+          // Handle structure: tags: { arrival: [...] }
+          if (data.data && data.data.tags && Array.isArray(data.data.tags.arrival)) {
+            arrivalProducts = data.data.tags.arrival;
           }
           
           setProducts(arrivalProducts);

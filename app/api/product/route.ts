@@ -114,9 +114,9 @@ export async function GET(req: NextRequest) {
     // Define the tags we want to group by
     const tagGroups = ['featured', 'arrival', 'hamper'];
     
-    // Initialize the result object with tags array
+    // Initialize the result object with tags object
     const result: any = {
-      tags: []
+      tags: {}
     };
     
     // Create tag groups with products
@@ -136,11 +136,8 @@ export async function GET(req: NextRequest) {
         }
       });
       
-      // Add tag group to result
-      result.tags.push({
-        tag: tag,
-        products: tagProducts
-      });
+      // Add tag products array directly to result.tags
+      result.tags[tag] = tagProducts;
     });
     
     return NextResponse.json({ 
