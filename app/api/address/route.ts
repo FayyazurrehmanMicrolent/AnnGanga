@@ -66,6 +66,31 @@ export async function POST(req: NextRequest) {
         const action = (body.action || actionQuery || 'create').toLowerCase();
         const data = body.data || body;
 
+        // GET SINGLE ADDRESS
+        if (action === 'get') {
+            const id = data.id || data.addressId;
+            if (!id) {
+                return NextResponse.json(
+                    { status: 400, message: 'Address ID is required', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            const address = await findAddressByIdSafe(String(id));
+            if (!address || address.isDeleted) {
+                return NextResponse.json(
+                    { status: 404, message: 'Address not found', data: {} },
+                    { status: 404 }
+                );
+            }
+
+            return NextResponse.json({
+                status: 200,
+                message: 'Address fetched successfully',
+                data: address,
+            });
+        }
+
         // CREATE ADDRESS
         if (action === 'create') {
             const {

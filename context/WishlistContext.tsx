@@ -105,12 +105,39 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, user?._id, token]);
 
   // Check if product is in wishlist
-  const isInWishlist = useCallback((productId: string): boolean => {
-    return items.some(item => item.productId === productId);
+  const isInWishlist = useCallback((productId: string | number): boolean => {
+    if (!productId) return false;
+    
+    const id = String(productId).trim();
+    console.log('Checking if product is in wishlist - ID:', id, 'Type:', typeof productId);
+    console.log('Current wishlist items:', items);
+    
+    const isInList = items.some(item => {
+      if (!item) return false;
+      
+      // Handle both string and number IDs
+      const itemId = item.productId ? String(item.productId).trim() : null;
+      const isMatch = itemId === id;
+      
+      if (isMatch) {
+        console.log(`✅ Product ${id} FOUND in wishlist:`, item);
+      }
+      
+      return isMatch;
+    });
+    
+    if (!isInList) {
+      console.log(`❌ Product ${id} NOT found in wishlist`);
+    }
+    
+    return isInList;
   }, [items]);
 
   // Add item to wishlist
-  const addToWishlist = useCallback(async (productId: string): Promise<boolean> => {
+  const addToWishlist = useCallback(async (productId: string | number): Promise<boolean> => {
+    const productIdStr = String(productId);
+    console.log('addToWishlist called with ID:', productIdStr);
+    
     if (!checkAuth()) {
       toast.error('Please login to add items to wishlist');
       return false;
@@ -118,6 +145,8 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
 
     try {
       setIsLoading(true);
+      console.log('Adding to wishlist - Product ID:', productId, 'Type:', typeof productId);
+      
       const response = await fetch('/api/wishlist', {
         method: 'POST',
         headers: {
@@ -125,10 +154,18 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ productId }),
+        body: JSON.stringify({ 
+          productId,
+          // Add additional debug info
+          debug: {
+            timestamp: new Date().toISOString(),
+            userId: user?._id
+          }
+        })
       });
-
+      
       const data = await response.json();
+      console.log('Wishlist API Response:', { status: response.status, data });
 
       if (response.ok && data.status === 201) {
         toast.success('Added to wishlist');
@@ -148,7 +185,10 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
   }, [checkAuth, token, refreshWishlist]);
 
   // Remove item from wishlist
-  const removeFromWishlist = useCallback(async (productId: string): Promise<boolean> => {
+  const removeFromWishlist = useCallback(async (productId: string | number): Promise<boolean> => {
+    const productIdStr = String(productId);
+    console.log('removeFromWishlist called with ID:', productIdStr, 'Type:', typeof productId);
+    
     if (!checkAuth()) {
       toast.error('Please login to manage wishlist');
       return false;
@@ -156,16 +196,27 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
 
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/wishlist?productId=${productId}`, {
+      console.log('Sending DELETE request to /api/wishlist with productId:', productIdStr);
+      
+      const response = await fetch('/api/wishlist', {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         credentials: 'include',
+        body: JSON.stringify({ 
+          productId: productIdStr, // Ensure we're sending the string version
+          debug: {
+            action: 'remove',
+            timestamp: new Date().toISOString(),
+            userId: user?._id
+          }
+        }),
       });
 
       const data = await response.json();
+      console.log('Wishlist DELETE response:', { status: response.status, data });
 
       if (response.ok && data.status === 200) {
         toast.success('Removed from wishlist');
@@ -185,7 +236,9 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
   }, [checkAuth, token, refreshWishlist]);
 
   // Toggle wishlist - add if not present, remove if present
-  const toggleWishlist = useCallback(async (productId: string): Promise<void> => {
+  const toggleWishlist = useCallback(async (productId: string | number): Promise<void> => {
+    const productIdStr = String(productId);
+    console.log('toggleWishlist called with ID:', productIdStr);
     if (isInWishlist(productId)) {
       await removeFromWishlist(productId);
     } else {

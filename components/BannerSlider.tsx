@@ -19,7 +19,7 @@ interface Banner {
   priority?: number;
   startDate?: string;
   endDate?: string;
-  images: string[];
+  image: string;
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -119,14 +119,12 @@ export default function BannerSlider() {
     );
   }
 
-  // Flatten all banner images into a single array for the slider
-  const allBannerImages = banners.flatMap(banner => 
-    banner.images?.map((image, index) => ({
-      ...banner,
-      imageUrl: image,
-      uniqueId: `${banner._id}-${index}`
-    })) || []
-  );
+  // Map banners with their image
+  const bannerSlides = banners.map(banner => ({
+    ...banner,
+    imageUrl: banner.image,
+    uniqueId: banner._id
+  }));
 
   return (
     <div className="">
@@ -175,7 +173,7 @@ export default function BannerSlider() {
       `}</style>
       
       <Slider {...settings}>
-        {allBannerImages.map((banner) => (
+        {bannerSlides.map((banner) => (
           <div key={banner.uniqueId} className="banner-slide">
             <Image
               src={banner.imageUrl}

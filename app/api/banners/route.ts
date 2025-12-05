@@ -198,6 +198,8 @@ export async function POST(req: NextRequest) {
     }
 
     const data = parsedData || {};
+    console.log('📦 Parsed data:', JSON.stringify(data, null, 2));
+    console.log('📦 Data title:', data.title);
 
     function sanitizeForFilename(raw: any, maxLen = 50) {
       if (raw === null || typeof raw === 'undefined') return undefined;
@@ -251,7 +253,7 @@ export async function POST(req: NextRequest) {
         const decoded: any = verifyToken(token);
         if (!decoded || !decoded.userId) return NextResponse.json({ status: 401, message: 'Invalid or expired token', data: {} }, { status: 401 });
 
-        const authUser = await User.findOne({ id: decoded.userId, isDeleted: false });
+        const authUser = await User.findOne({ _id: decoded.userId, isDeleted: false });
         if (!authUser) return NextResponse.json({ status: 401, message: 'User not found', data: {} }, { status: 401 });
         if (!authUser.isActive) return NextResponse.json({ status: 403, message: 'Account inactive', data: {} }, { status: 403 });
 
@@ -300,7 +302,7 @@ export async function POST(req: NextRequest) {
         priority: typeof data.priority !== 'undefined' ? Number(data.priority) : (data.priority ?? 0),
         startDate: startDate ?? null,
         endDate: endDate ?? null,
-        images: imagesPaths,
+        image: imagesPaths.length > 0 ? imagesPaths[0] : undefined,
       });
 
       try {

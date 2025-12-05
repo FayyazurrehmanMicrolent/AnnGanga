@@ -14,14 +14,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    /* --background: #0a0a0a; */
     --foreground: #ededed;
   }
 }
 
 body {
   background: var(--background);
-  color: #111827; /* Force dark text */
+  /* color: #111827; Force dark text */
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -39,28 +39,28 @@ textarea::placeholder {
 }
 
 /* Ensure all text elements are dark by default */
-p, span, label, div, h1, h2, h3, h4, h5, h6, a, button {
+/* p, span, label, div, h1, h2, h3, h4, h5, h6, a, button {
   color: inherit;
-}
+} */
 
 /* Force dark text for common utility classes */
-.text-gray-400 {
-  color: #4B5563 !important; /* Darker gray-600 */
-}
+/* .text-gray-400 { */
+  /* color: #4B5563 !important; Darker gray-600 */
+/* } */
 
-.text-gray-500 {
-  color: #374151 !important; /* Darker gray-700 */
-}
+/* .text-gray-500 { */
+  /* color: #374151 !important; Darker gray-700 */
+/* } */
 
-.text-gray-600 {
-  color: #1F2937 !important; /* Darker gray-800 */
-}
+/* .text-gray-600 { */
+  /* color: #1F2937 !important; Darker gray-800 */
+/* } */
 
-.text-gray-700 {
-  color: #111827 !important; /* Darkest gray-900 */
-}
+/* .text-gray-700 { */
+  /* color: #111827 !important; Darkest gray-900 */
+/* } */
 
 /* Ensure white text stays white when explicitly set */
-.text-white {
+/* .text-white {
   color: white !important;
-}
+} */

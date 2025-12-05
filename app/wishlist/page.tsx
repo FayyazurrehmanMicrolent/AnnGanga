@@ -40,7 +40,7 @@ export default function WishlistPage() {
           <Heart className="w-16 h-16 mx-auto text-gray-300 mb-4" />
           <h2 className="text-2xl font-semibold text-gray-800 mb-2">Your Wishlist is Empty</h2>
           <p className="text-gray-600 mb-6">
-            Start adding items to your wishlist to save them for later!
+            Start adding items to your wishli st to save them for later!
           </p>
           <Link href="/products">
             <Button className="bg-green-600 hover:bg-green-700">
@@ -70,7 +70,7 @@ export default function WishlistPage() {
   return (
     <div className="container mx-auto px-4 py-8">
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {items.map((item) => (
           <div
             key={item.productId}

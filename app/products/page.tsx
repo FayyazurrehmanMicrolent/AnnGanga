@@ -38,19 +38,42 @@ export default function ProductsPage() {
           throw new Error('Failed to fetch products');
         }
         const data = await response.json();
+        
         if (data.status === 200) {
-          const formattedProducts = data.data.map((product: any) => ({
+          // Handle different response structures
+          let productsData = [];
+          
+          // If data is in the format { data: { tags: { [key: string]: { products: [...] } } } }
+          if (data.data && data.data.tags) {
+            // Extract all products from all tags
+            productsData = Object.values(data.data.tags).flatMap(
+              (tag: any) => tag.products || []
+            );
+          } 
+          // If data is already an array of products
+          else if (Array.isArray(data.data)) {
+            productsData = data.data;
+          }
+          // If data is a direct object with products array
+          else if (data.data && Array.isArray(data.data.products)) {
+            productsData = data.data.products;
+          }
+          
+          const formattedProducts = productsData.map((product: any) => ({
             id: product.productId || product._id,
-            name: product.title,
+            name: product.title || product.name || 'Unnamed Product',
             weight: product.weightVsPrice?.[0]?.weight || '1 kg',
             price: product.actualPrice || 0,
-            oldPrice: product.mrp || 0,
-            off: product.mrp > 0 
+            oldPrice: product.mrp || product.actualPrice || 0,
+            off: product.mrp && product.actualPrice && product.mrp > product.actualPrice
               ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
               : 0,
-            img: product.images?.[0] || '/placeholder/spice.jpg',
-            images: product.images || []
+            img: Array.isArray(product.images) && product.images.length > 0 
+              ? product.images[0] 
+              : '/placeholder/spice.jpg',
+            images: Array.isArray(product.images) ? product.images : []
           }));
+          
           setProducts(formattedProducts);
         } else {
           throw new Error(data.message || 'Failed to load products');
@@ -112,8 +135,8 @@ export default function ProductsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product) => (
-                <div key={product.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+              {products.map((product, index) => (
+                <div key={`${product.id}-${index}`} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                   <Link href={`/products/${product.id}`} className="block">
                     <div className="relative">
                       <img 

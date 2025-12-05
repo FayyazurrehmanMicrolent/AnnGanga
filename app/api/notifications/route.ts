@@ -82,6 +82,42 @@ export async function POST(req: NextRequest) {
 
         const url = new URL(req.url);
         const actionQuery = url.searchParams.get('action');
+        const pathname = url.pathname.split('/');
+        const endpoint = pathname[pathname.length - 1];
+
+        // Handle mark-read endpoint
+        if (endpoint === 'mark-read') {
+            const { notificationId, isRead } = await req.json();
+            
+            if (!notificationId) {
+                return NextResponse.json(
+                    { status: 400, message: 'Notification ID is required', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            const updatedNotification = await Notification.findByIdAndUpdate(
+                notificationId,
+                { isRead },
+                { new: true }
+            );
+
+            if (!updatedNotification) {
+                return NextResponse.json(
+                    { status: 404, message: 'Notification not found', data: {} },
+                    { status: 404 }
+                );
+            }
+
+            return NextResponse.json(
+                {
+                    status: 200,
+                    message: 'Notification updated successfully',
+                    data: { notification: updatedNotification },
+                },
+                { status: 200 }
+            );
+        }
 
         const body = await req.json().catch(() => ({}));
         const action = (body.action || actionQuery || 'send').toLowerCase();

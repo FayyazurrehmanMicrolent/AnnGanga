@@ -12,9 +12,9 @@ interface IBanner extends Document {
   priority?: number;
   startDate?: Date | null;
   endDate?: Date | null;
-  images: string[];
-  isDeleted: boolean;
+  image: string;
   createdAt: Date;
+  isDeleted: boolean;
   updatedAt: Date;
 }
 
@@ -30,7 +30,7 @@ const bannerSchema = new Schema<IBanner>(
     priority: { type: Number, default: 0 },
     startDate: { type: Date },
     endDate: { type: Date },
-    images: { type: [String], default: [] },
+    image: { type: String, required: true },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }

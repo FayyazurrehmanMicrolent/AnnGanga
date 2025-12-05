@@ -27,7 +27,7 @@ interface IProduct extends Document {
   description?: string | null;
   images: string[];
   categoryId?: string | null;
-  frequentlyBoughtTogether?: string[]; // Array of productIds
+  frequentlyBoughtTogether?: string[]; 
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;

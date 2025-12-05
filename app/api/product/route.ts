@@ -103,17 +103,47 @@ export async function GET(req: NextRequest) {
       filter.tags = tag;
     }
 
+    // Get all products matching the filter
     let products = await Product.find(filter).sort({ createdAt: -1 }).lean();
-    try {
-      const prioritySet = new Set(['arrival', 'featured', 'hamper']);
-      const isPriority = (p: any) => Array.isArray(p?.tags) && p.tags.some((t: any) => prioritySet.has(String(t || '').trim().toLowerCase()));
-      const prioritized = products.filter(isPriority);
-      const rest = products.filter((p: any) => !isPriority(p));
-      products = [...prioritized, ...rest];
-    } catch (e) {
-      // if anything goes wrong, fall back to the original ordering
+    
+    // Initialize the result object with empty arrays for each tag
+    const result: any = {
+      tags: {}
+    };
+    
+    // Define the tags we want to group by
+    const tagGroups = ['featured', 'arrival', 'hamper'];
+    
+    // Initialize each tag group with an empty products array
+    tagGroups.forEach(tag => {
+      result.tags[tag] = { products: [] };
+    });
+    
+    // If categoryId is provided, filter products by category
+    if (categoryId) {
+      products = products.filter((product: any) => product.categoryId === categoryId);
     }
-    return NextResponse.json({ status: 200, message: 'Products fetched', data: products }, { status: 200 });
+    
+    // Process each product and add it to the appropriate tag groups
+    products.forEach((product: any) => {
+      if (product.tags && Array.isArray(product.tags)) {
+        // Convert all tags to lowercase for case-insensitive matching
+        const productTags = product.tags.map((t: string) => t?.toLowerCase?.());
+        
+        // Add product to each matching tag group
+        tagGroups.forEach(tag => {
+          if (productTags.includes(tag)) {
+            result.tags[tag].products.push(product);
+          }
+        });
+      }
+    });
+    
+    return NextResponse.json({ 
+      status: 200, 
+      message: 'Products fetched and grouped by tags', 
+      data: result 
+    }, { status: 200 });
   } catch (error: any) {
     console.error('GET /api/product error', error);
     return NextResponse.json({ status: 500, message: error.message || 'Failed to fetch products', data: {} }, { status: 500 });

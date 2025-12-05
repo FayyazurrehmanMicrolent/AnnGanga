@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     const products = await Product.find({ isDeleted: false })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .lean();
+      .lean() as any[];
 
     if (!products.length) {
       return NextResponse.json(
@@ -96,13 +96,13 @@ export async function GET(req: NextRequest) {
       const cats = await Category.find({
         categoryId: { $in: categoryIds },
         isDeleted: false,
-      }).lean();
-      for (const c of cats as any[]) {
+      }).lean() as any[];
+      for (const c of cats) {
         categoriesById.set(c.categoryId, c);
       }
     }
 
-    const mapToMobileProduct = (p: any): MobileFeaturedProduct => {
+    const mapToMobileProduct = (p: IProduct & { _id: any }): MobileFeaturedProduct => {
       const weightEntry = Array.isArray(p.weightVsPrice) && p.weightVsPrice.length ? p.weightVsPrice[0] : null;
       const category = p.categoryId ? categoriesById.get(p.categoryId) : null;
 
@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
         dimensions: null,
         attributes: null,
         variants: Array.isArray(p.weightVsPrice)
-          ? p.weightVsPrice.map((wp: any) => ({
+          ? p.weightVsPrice.map((wp) => ({
               name: wp.weight,
               price: wp.price,
               value: wp.weight,
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
           : [],
         isActive: true,
         isFeatured: Array.isArray(p.tags)
-          ? p.tags.some((t: any) => String(t || '').toLowerCase() === 'featured')
+          ? p.tags.some((t) => String(t || '').toLowerCase() === 'featured')
           : false,
         isDigital: false,
         seoData: null,

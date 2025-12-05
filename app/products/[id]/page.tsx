@@ -163,8 +163,8 @@ export default function ProductDetails() {
     
     const selectedVariant = product.weightVsPrice[selectedWeight];
     
-    // Use productId if available, otherwise fall back to _id
-    const productId = product.productId || product._id;
+    // Use _id for consistency with wishlist
+    const productId = product._id;
     
     const success = await addToCart({
       productId,
@@ -192,7 +192,8 @@ export default function ProductDetails() {
 
   const handleWishlistToggle = async () => {
     if (!product) return;
-    const productId = product.productId || product._id;
+    // Use _id for consistency with backend
+    const productId = product._id;
     await toggleWishlist(productId);
   };
 
@@ -351,7 +352,7 @@ export default function ProductDetails() {
                   />
                 ))}
                 <span className="ml-2 text-sm text-gray-500">
-                  {(product.rating || 0) > 0 ? `${(product.rating || 0).toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
+                  {(product.rating || 0) > 0 ? `${product.rating?.toFixed(1)} (${product.reviewCount} reviews)` : 'No reviews yet'}
                 </span>
               </div>
             </div>
@@ -421,7 +422,8 @@ export default function ProductDetails() {
               <div className="flex flex-wrap gap-3">
                 {(() => {
                   const isOutOfStock = !product.weightVsPrice?.[selectedWeight]?.quantity || product.weightVsPrice[selectedWeight].quantity <= 0;
-                  const productId = product.productId || product._id;
+                  // Use _id for consistency with backend
+                  const productId = product._id;
                   const inWishlist = isInWishlist(productId);
                   
                   return (

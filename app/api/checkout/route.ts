@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Get product details and validate
-        const productIds = cart.items.map((item: { productId: string }) => item.productId);
+        const productIds = cart.items.map((item: any) => item.productId);
         const products = await Product.find({ productId: { $in: productIds }, isDeleted: false }).lean();
         const productMap = new Map(products.map((p: any) => [p.productId, p]));
 
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
 
         try {
             // Verify product availability and update quantities
-            for (const item of cart.items as any[]) {
+            for (const item of cart.items) {
                 const product = await Product.findOne({ productId: item.productId, isDeleted: false }).session(session);
                 
                 if (!product) {
