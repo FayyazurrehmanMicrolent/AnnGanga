@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
       )
     );
 
-    let categoriesById = new Map<string, ICategory & { _id: any }>();
+    let categoriesById = new Map<string, any>();
     if (categoryIds.length) {
       const cats = await Category.find({
         categoryId: { $in: categoryIds },
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const mapToMobileProduct = (p: IProduct & { _id: any }): MobileFeaturedProduct => {
+    const mapToMobileProduct = (p: any): MobileFeaturedProduct => {
       const weightEntry = Array.isArray(p.weightVsPrice) && p.weightVsPrice.length ? p.weightVsPrice[0] : null;
       const category = p.categoryId ? categoriesById.get(p.categoryId) : null;
 
@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
         dimensions: null,
         attributes: null,
         variants: Array.isArray(p.weightVsPrice)
-          ? p.weightVsPrice.map((wp) => ({
+          ? p.weightVsPrice.map((wp: any) => ({
               name: wp.weight,
               price: wp.price,
               value: wp.weight,
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
           : [],
         isActive: true,
         isFeatured: Array.isArray(p.tags)
-          ? p.tags.some((t) => String(t || '').toLowerCase() === 'featured')
+          ? p.tags.some((t: any) => String(t || '').toLowerCase() === 'featured')
           : false,
         isDigital: false,
         seoData: null,

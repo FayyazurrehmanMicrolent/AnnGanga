@@ -37,9 +37,8 @@ export default function FeaturedProductsPage() {
           // Extract featured products from the response
           let featuredProducts: Product[] = [];
           
-          // Handle structure: tags: { featured: [...] }
-          if (data.data && data.data.tags && Array.isArray(data.data.tags.featured)) {
-            featuredProducts = data.data.tags.featured;
+          if (data.data && data.data.tags && data.data.tags.featured) {
+            featuredProducts = data.data.tags.featured.products || [];
           }
           
           setProducts(featuredProducts);

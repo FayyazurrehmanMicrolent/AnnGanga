@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Reward from '@/models/reward';
 import User from '@/models/users';
+import mongoose from 'mongoose';
 import { adjustRewardBalance } from '@/lib/rewards';
 
 export async function GET(req: NextRequest) {
@@ -25,11 +26,23 @@ export async function GET(req: NextRequest) {
 
         // Get user details for each reward
         const userIds = rewards.map((r) => r.userId);
-        const users = await User.find({ id: { $in: userIds } })
-            .select('id name email phone')
-            .lean();
+        // Find users by either application `id` (uuid) or MongoDB `_id`.
+        // Build two conditions: match `id` or match `_id` when the value is a valid ObjectId.
+        const possibleObjectIds = userIds.filter(id => mongoose.Types.ObjectId.isValid(String(id))).map(id => new mongoose.Types.ObjectId(String(id)));
 
-        const userMap = new Map(users.map((u) => [u.id, u]));
+        const users = await User.find({
+            $or: [
+                { id: { $in: userIds } },
+                { _id: { $in: possibleObjectIds.length ? possibleObjectIds : [''] } }
+            ]
+        }).select('id name email phone').lean();
+
+        // Map both uuid `id` and stringified `_id` to the user record so lookups succeed
+        const userMap = new Map();
+        for (const u of users) {
+            if (u.id) userMap.set(u.id, u);
+            if ((u as any)._id) userMap.set(String((u as any)._id), u);
+        }
 
         const rewardsWithUsers = rewards.map((reward) => {
             const user = userMap.get(reward.userId);
@@ -117,7 +130,7 @@ export async function POST(req: NextRequest) {
             await adjustRewardBalance(userId, Number(amount), String(reason).trim());
 
             // Get updated reward
-            const reward = await Reward.findOne({ userId }).lean() as { balance?: number } | null;
+            const reward = await Reward.findOne({ userId }).lean() as { balance: number } | null;
 
             return NextResponse.json(
                 {

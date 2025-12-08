@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Review from '@/models/review';
 import User from '@/models/users';
+import { saveUpload } from '@/lib/upload';
 
 // Helper: find review by reviewId or _id
 async function findReviewByIdSafe(id: string) {
@@ -153,11 +154,85 @@ export async function POST(req: NextRequest, context: any) {
         const qProductId = url.searchParams.get('productId');
         const actionQuery = url.searchParams.get('action');
 
-        const body = await req.json().catch(() => ({}));
-        const action = (body.action || actionQuery || 'create').toLowerCase();
-        const data = body.data || body;
+        // Robust body parsing: support JSON and multipart/form-data (with `data` field and file uploads)
+        let action = (actionQuery || 'create').toString().toLowerCase();
+        let data: any = {};
+        const imagesPaths: string[] = [];
+
+        const contentType = req.headers.get('content-type') || '';
+        if (contentType.includes('multipart/form-data') || contentType.includes('form-data')) {
+            const form = await req.formData();
+
+            const dataField = form.get('data');
+            if (dataField) {
+                try {
+                    data = typeof dataField === 'string' ? JSON.parse(String(dataField)) : JSON.parse(String(dataField));
+                } catch (e) {
+                    data = {};
+                }
+            }
+
+            if (!data) data = {};
+
+            // Merge simple direct fields that might be sent outside `data`
+            const directKeys = ['action', 'productId', 'userId', 'rating', 'title', 'comment', 'orderId'];
+            for (const k of directKeys) {
+                try {
+                    const v = form.get(k);
+                    if (v !== null && typeof v !== 'undefined') {
+                        // numeric fields
+                        if (k === 'rating') data[k] = Number(String(v));
+                        else data[k] = String(v);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            // Resolve action after merging
+            if (data.action) action = String(data.action).toLowerCase();
+
+            // Collect any file fields that include 'image'
+            const collectedFiles: Blob[] = [];
+            try {
+                for (const entry of form.entries() as any) {
+                    const [key, value] = entry;
+                    const lower = String(key || '').toLowerCase();
+                    if (lower.includes('image')) {
+                        if (value && typeof (value as any).size !== 'undefined') collectedFiles.push(value as Blob);
+                    }
+                }
+            } catch (e) {
+                // fallback: try common keys
+                const files = form.getAll('images') as any[];
+                if (files && files.length) for (const f of files) if (f && (f as any).size) collectedFiles.push(f as Blob);
+                const single = form.get('image') as Blob | null;
+                if (single && (single as any).size) collectedFiles.push(single as Blob);
+            }
+
+            if (collectedFiles.length) {
+                for (const f of collectedFiles) {
+                    if (f && (f as any).size) {
+                        const saved = await saveUpload(f as Blob, 'reviews');
+                        if (saved) imagesPaths.push(saved);
+                    }
+                }
+            }
+        } else {
+            const body = await req.json().catch(() => ({}));
+            action = (body.action || action).toLowerCase();
+            data = body.data || body || {};
+            if (Array.isArray(body.images)) {
+                // allow images passed as URLs in JSON
+                for (const img of body.images) if (img) imagesPaths.push(String(img));
+            }
+        }
 
         const productId = productIdFromPath || data.productId || qProductId;
+
+        // Attach any saved image paths to data.images (prefer explicit data.images if provided)
+        if (!Array.isArray(data.images)) data.images = [];
+        if (imagesPaths.length) data.images = Array.from(new Set([...(data.images || []), ...imagesPaths]));
 
         if (!productId) {
             return NextResponse.json(

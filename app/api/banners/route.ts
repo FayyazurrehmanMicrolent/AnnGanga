@@ -197,6 +197,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Debug: show any uploaded/saved image paths parsed from the request
+    try {
+      if (imagesPaths && imagesPaths.length) console.log('Parsed imagesPaths:', imagesPaths);
+    } catch (e) {
+      // ignore logging errors
+    }
+
     const data = parsedData || {};
     console.log('📦 Parsed data:', JSON.stringify(data, null, 2));
     console.log('📦 Data title:', data.title);
@@ -391,50 +398,61 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Images handling: support imagesMode: 'append' | 'replace' and removeImages array
+      // Images handling: banner schema stores single `image` string.
       const imagesMode = (data.imagesMode || data.imagesAction || '').toString().toLowerCase() || 'append';
+
+      // removeImages: if client requests removal and it matches the current image, delete file and clear
       if (Array.isArray(data.removeImages) && data.removeImages.length) {
         const toRemove: string[] = data.removeImages.map((x: any) => String(x));
-        const keep: string[] = [];
-        for (const img of banner.images || []) {
-          if (toRemove.includes(img)) {
-            try {
-              if (img && String(img).startsWith('/uploads/banners/')) {
-                const rel = String(img).replace(/^\//, '');
-                const filePath = path.join(process.cwd(), 'public', rel);
-                await fs.promises.unlink(filePath).catch(() => null);
-              }
-            } catch (e) {
-              console.debug('Failed to remove banner image', String(e));
+        try {
+          if (banner.image && toRemove.includes(String(banner.image))) {
+            if (banner.image && String(banner.image).startsWith('/uploads/banners/')) {
+              const rel = String(banner.image).replace(/^\//, '');
+              const filePath = path.join(process.cwd(), 'public', rel);
+              await fs.promises.unlink(filePath).catch(() => null);
             }
-          } else {
-            keep.push(img);
+            banner.image = undefined as any;
           }
+        } catch (e) {
+          console.debug('Failed to remove banner image', String(e));
         }
-        banner.images = keep;
       }
 
+      // If files were uploaded, pick the first one (banner stores single image)
       if (imagesPaths.length) {
+        const newImage = imagesPaths[0];
         if (imagesMode === 'replace' || data.forceReplaceImages) {
           try {
-            for (const img of banner.images || []) {
-              if (img && String(img).startsWith('/uploads/banners/')) {
-                const rel = String(img).replace(/^\//, '');
-                const filePath = path.join(process.cwd(), 'public', rel);
-                await fs.promises.unlink(filePath).catch(() => null);
-              }
+            if (banner.image && String(banner.image).startsWith('/uploads/banners/')) {
+              const rel = String(banner.image).replace(/^\//, '');
+              const filePath = path.join(process.cwd(), 'public', rel);
+              await fs.promises.unlink(filePath).catch(() => null);
             }
           } catch (e) {
-            console.debug('Failed to remove old banner images', String(e));
+            console.debug('Failed to remove old banner image', String(e));
           }
-          banner.images = imagesPaths;
+          banner.image = newImage;
         } else {
-          banner.images = Array.from(new Set([...(banner.images || []), ...imagesPaths]));
+          // append mode: only set if there is no existing image
+          if (!banner.image) banner.image = newImage;
+          }
         }
+
+      try {
+        console.log('banner.image before save:', banner.image);
+      } catch (e) {
+        // ignore
       }
 
-      await banner.save();
-      return NextResponse.json({ status: 200, message: 'Banner updated', data: banner }, { status: 200 });
+      const savedBanner = await banner.save();
+
+      try {
+        console.log('banner.image after save:', savedBanner.image);
+      } catch (e) {
+        // ignore
+      }
+
+      return NextResponse.json({ status: 200, message: 'Banner updated', data: savedBanner }, { status: 200 });
     }
 
     if (action === 'delete') {
@@ -443,15 +461,13 @@ export async function POST(req: NextRequest) {
       if (!banner) return NextResponse.json({ status: 404, message: 'Banner not found', data: {} }, { status: 404 });
 
       try {
-        for (const img of banner.images || []) {
-          if (img && String(img).startsWith('/uploads/banners/')) {
-            const rel = String(img).replace(/^\//, '');
-            const filePath = path.join(process.cwd(), 'public', rel);
-            await fs.promises.unlink(filePath).catch(() => null);
-          }
+        if (banner.image && String(banner.image).startsWith('/uploads/banners/')) {
+          const rel = String(banner.image).replace(/^\//, '');
+          const filePath = path.join(process.cwd(), 'public', rel);
+          await fs.promises.unlink(filePath).catch(() => null);
         }
       } catch (e) {
-        console.debug('DELETE /api/banner - failed to remove images', String(e));
+        console.debug('DELETE /api/banner - failed to remove image', String(e));
       }
 
       await Banner.deleteOne({ _id: banner._id });

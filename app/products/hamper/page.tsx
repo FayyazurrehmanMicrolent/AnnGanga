@@ -37,9 +37,8 @@ export default function HamperProductsPage() {
           // Extract hamper products from the response
           let hamperProducts: Product[] = [];
           
-          // Handle structure: tags: { hamper: [...] }
-          if (data.data && data.data.tags && Array.isArray(data.data.tags.hamper)) {
-            hamperProducts = data.data.tags.hamper;
+          if (data.data && data.data.tags && data.data.tags.hamper) {
+            hamperProducts = data.data.tags.hamper.products || [];
           }
           
           setProducts(hamperProducts);

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { X, User, Heart, ShoppingBag, Settings, LogOut, ChevronRight, icons, Home, MapPin, Star, Bell } from 'lucide-react';
+import { X, User, Heart, ShoppingBag, Settings, LogOut, ChevronRight, icons, Home, MapPin, Star, Bell, MessageSquare } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 type SidebarProps = {
@@ -19,6 +19,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     { name: "Home", icon: Home, href: '/' },
     { name: 'My Profile', icon: User, href: '/profile' },
     { name: 'My Orders', icon: ShoppingBag, href: '/orders' },
+    { name: 'My Reviews', icon: MessageSquare, href: '/reviews' },
     { name: 'Wishlist', icon: Heart, href: '/wishlist' },
     { name: "My Addresses", icon: MapPin, href: '/my-addresses' },
     { name: "Blogs", icon: Star, href: '/blogs' },

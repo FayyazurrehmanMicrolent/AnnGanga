@@ -112,7 +112,13 @@ export async function POST(req: NextRequest, context: any) {
             const userId = authResult.user.userId || authResult.user.user_id || authResult.user.id;
             if (!userId) return NextResponse.json({ status: 401, message: 'User id not found in token.', data: {} }, { status: 401 });
 
-            const user = await User.findOne({ id: userId, isDeleted: false });
+            // Support tokens that contain either the application `id` (uuid) or MongoDB `_id`.
+            const user = await User.findOne({
+                $and: [
+                    { isDeleted: false },
+                    { $or: [{ id: userId }, { _id: userId }] }
+                ]
+            });
             if (!user) return NextResponse.json({ status: 404, message: 'User not found.', data: {} }, { status: 404 });
 
             let role: any = null;

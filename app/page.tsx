@@ -44,9 +44,7 @@ interface Category {
   updatedAt: string;
 }
 
-interface ProductsByTag {
-  [key: string]: any;
-}
+type ProductsByTag = Record<string, any[] | { products: any[]; tag?: string; title?: string }>;
 
 const featured = [
   {
@@ -107,7 +105,7 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [productsByTag, setProductsByTag] = useState<ProductsByTag>({});
   const { addToCart: addToCartContext } = useCart();
-  const { addToWishlist, removeFromWishlist, items: wishlistItems } = useWishlist();
+  const { addToWishlist, removeFromWishlist, items: wishlist } = useWishlist();
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,17 +141,9 @@ export default function HomePage() {
         // If filtered by category, handle the response format
         if (categoryId) {
           // Check if the response has tags (regular response) or is an array (filtered response)
-          if (data.data && data.data.tags && typeof data.data.tags === 'object' && !Array.isArray(data.data.tags)) {
-            // Structure: tags: { featured: [...], hamper: [...], arrival: [...] }
-            const tagsObject: any = {};
-            Object.keys(data.data.tags).forEach(tag => {
-              tagsObject[tag] = {
-                products: data.data.tags[tag] || [],
-                tag: tag,
-                title: tag.charAt(0).toUpperCase() + tag.slice(1)
-              };
-            });
-            setProductsByTag(tagsObject);
+          if (data.data && data.data.tags) {
+            // Regular response with tags
+            setProductsByTag(data.data.tags || {});
           } else if (Array.isArray(data.data)) {
             // Direct array response
             if (data.data.length === 0) {
@@ -192,18 +182,7 @@ export default function HomePage() {
           }
         } else {
           // Regular non-filtered response
-          if (data.data && data.data.tags && typeof data.data.tags === 'object' && !Array.isArray(data.data.tags)) {
-            // Structure: tags: { featured: [...], hamper: [...], arrival: [...] }
-            const tagsObject: any = {};
-            Object.keys(data.data.tags).forEach(tag => {
-              tagsObject[tag] = {
-                products: data.data.tags[tag] || [],
-                tag: tag,
-                title: tag.charAt(0).toUpperCase() + tag.slice(1)
-              };
-            });
-            setProductsByTag(tagsObject);
-          }
+          setProductsByTag(data.data?.tags || {});
         }
       } else {
         throw new Error(data.message || 'Failed to fetch products');
@@ -248,12 +227,12 @@ export default function HomePage() {
     let products = [];
     
     // If products are in the format { [key: string]: { products: [...] } }
-    if (productsByTag[tag] && Array.isArray(productsByTag[tag]?.products)) {
-      products = productsByTag[tag].products;
+    if (productsByTag[tag] && typeof productsByTag[tag] === 'object' && !Array.isArray(productsByTag[tag]) && 'products' in productsByTag[tag]) {
+      products = (productsByTag[tag] as { products: any[] }).products;
     } 
     // If products is directly an array
     else if (Array.isArray(productsByTag[tag])) {
-      products = productsByTag[tag];
+      products = productsByTag[tag] as any[];
     }
     
     // If we're filtering by category and no products are found
@@ -311,7 +290,8 @@ export default function HomePage() {
             const weight = product.weightVsPrice?.[0]?.weight || '';
             const price = product.actualPrice || 0;
             const mrp = product.mrp || price;
-            const off = mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0;
+            // Use discountPercentage from API if available, otherwise calculate it
+            const off = product.discountPercentage ?? (mrp > price ? Math.round(((mrp - price) / mrp) * 100) : 0);
             const image = Array.isArray(product.images) && product.images.length > 0 
               ? product.images[0] 
               : '/images/placeholder-product.png';
@@ -336,11 +316,12 @@ export default function HomePage() {
   };
 
   const renderProductCard = (product: any) => {
-    const isInWishlist = wishlistItems.some((item) => item.productId === product._id);
+    const isInWishlist = wishlist.some((item: any) => item.productId === product._id);
     const weight = product.weightVsPrice[0]?.weight || '';
     const price = product.actualPrice;
     const oldPrice = product.mrp;
-    const off = Math.round(((oldPrice - price) / oldPrice) * 100);
+    // Use discountPercentage from API if available, otherwise calculate it
+    const off = product.discountPercentage ?? Math.round(((oldPrice - price) / oldPrice) * 100);
     const image = product.images[0] || '/images/placeholder-product.png';
 
     return (
@@ -397,6 +378,8 @@ export default function HomePage() {
                 e.stopPropagation();
                 addToCartContext({
                   productId: product._id,
+                  productName: product.title,
+                  productImage: image,
                   price: product.actualPrice,
                   quantity: 1,
                   weightOption: weight || ''

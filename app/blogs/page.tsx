@@ -9,6 +9,7 @@ interface Blog {
   blogId: string;
   title: string;
   excerpt: string;
+  content?: string;
   images: string[];
   publishedDate: string;
   tags?: string[];
@@ -107,7 +108,7 @@ export default function BlogsPage() {
                       {blog.title}
                     </h2>
                     <p className="text-gray-600 mb-4 line-clamp-3">
-                      {blog.excerpt || ''}...
+                      {blog.excerpt || blog.content?.substring(0, 150) || ''}...
                     </p>
                     <div className="flex flex-wrap gap-2 mb-4">
                       {blog.tags?.slice(0, 3).map((tag) => (

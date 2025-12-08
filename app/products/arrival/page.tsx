@@ -37,9 +37,8 @@ export default function ArrivalProductsPage() {
           // Extract arrival products from the response
           let arrivalProducts: Product[] = [];
           
-          // Handle structure: tags: { arrival: [...] }
-          if (data.data && data.data.tags && Array.isArray(data.data.tags.arrival)) {
-            arrivalProducts = data.data.tags.arrival;
+          if (data.data && data.data.tags && data.data.tags.arrival) {
+            arrivalProducts = data.data.tags.arrival.products || [];
           }
           
           setProducts(arrivalProducts);
