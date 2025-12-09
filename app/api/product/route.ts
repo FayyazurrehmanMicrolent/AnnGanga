@@ -330,6 +330,10 @@ export async function GET(req: NextRequest) {
     const hasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
 
     // Build appliedFilters object for cookie and response
+    const _discountBool = String(discountParam).toLowerCase() === 'true' || String(discountParam) === '1';
+    const expectedDelivery = !!(deliveryParam);
+    const normalDelivery = deliveryParam ? String(deliveryParam).toLowerCase().includes('normal') : false;
+
     const appliedFilters = {
       minPrice: minPrice ? parseFloat(minPrice) : null,
       maxPrice: maxPrice ? parseFloat(maxPrice) : null,
@@ -337,8 +341,12 @@ export async function GET(req: NextRequest) {
       categoryId: categoryId || null,
       dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam).split(',').map((s: string) => s.trim())) : [],
       vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
-      discount: discountParam === 'true' || discountParam === '1',
+      // normalized discount boolean
+      discount: _discountBool,
+      // original delivery value (preserved) and two boolean helpers
       delivery: deliveryParam || null,
+      expectedDelivery,
+      normalDelivery,
       sortBy,
     };
 
@@ -606,6 +614,10 @@ export async function POST(req: NextRequest) {
         }
       });
 
+      const _discountBoolPost = String(discountParam).toLowerCase() === 'true' || String(discountParam) === '1';
+      const expectedDeliveryPost = !!(deliveryParam);
+      const normalDeliveryPost = deliveryParam ? String(deliveryParam).toLowerCase().includes('normal') : false;
+
       const appliedFilters = {
         minPrice: minPrice ? parseFloat(minPrice) : null,
         maxPrice: maxPrice ? parseFloat(maxPrice) : null,
@@ -613,8 +625,11 @@ export async function POST(req: NextRequest) {
         categoryId: categoryId || null,
         dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam).split(',').map((s: string) => s.trim())) : [],
         vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
-        discount: discountParam === true || discountParam === 'true',
+        // normalized discount boolean
+        discount: _discountBoolPost,
         delivery: deliveryParam || null,
+        expectedDelivery: expectedDeliveryPost,
+        normalDelivery: normalDeliveryPost,
         sortBy,
       };
 
