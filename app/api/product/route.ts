@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Product from '@/models/product';
 import Category from '@/models/category';
+import Review from '@/models/review';
 import { saveUpload } from '@/lib/upload';
 import fs from 'fs';
 import path from 'path';
@@ -61,7 +62,21 @@ export async function GET(req: NextRequest) {
     const dietaryParam = url.searchParams.get('dietary');
     const tag = url.searchParams.get('tag');
 
-    console.log('Request parameters:', { id, categoryId, dietaryParam, tag });
+    // Pagination parameters
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    const skip = (page - 1) * limit;
+
+    // Filter parameters
+    const minPrice = url.searchParams.get('minPrice');
+    const maxPrice = url.searchParams.get('maxPrice');
+    const rating = url.searchParams.get('rating');
+    const vitaminsParam = url.searchParams.get('vitamins');
+    const discountParam = url.searchParams.get('discount');
+    const deliveryParam = url.searchParams.get('delivery');
+    const sortBy = url.searchParams.get('sortBy') || 'newest';
+
+    console.log('Request parameters:', { id, categoryId, dietaryParam, tag, page, limit, minPrice, maxPrice, rating });
 
     if (id) {
       console.log('Looking up product with ID:', id);
@@ -96,69 +111,220 @@ export async function GET(req: NextRequest) {
     }
 
     const filter: any = { isDeleted: false };
+    
+    // Category Filter
     if (categoryId) filter.categoryId = categoryId;
+    
+    // Dietary Tags Filter
     if (dietaryParam) {
-      // allow comma-separated dietary tags, pick first if multiple provided
       const d = String(dietaryParam || '').split(',').map(s => s.trim()).filter(Boolean);
       if (d.length === 1) filter.dietary = d[0];
       else if (d.length > 1) filter.dietary = { $in: d };
     }
     
-    // Add tag filtering
+    // Tag filtering
     if (tag) {
       filter.tags = tag;
     }
 
-    // Get all products matching the filter
-    let products = await Product.find(filter).sort({ createdAt: -1 }).lean();
-    
-    // Initialize the result object with empty arrays for each tag
-    const result: any = {
-      tags: {}
-    };
-    
-    // Define the tags we want to group by
-    const tagGroups = ['featured', 'arrival', 'hamper'];
-    
-    // Initialize each tag group with an empty products array
-    tagGroups.forEach(tag => {
-      result.tags[tag] = { products: [] };
-    });
-    
-    // If categoryId is provided, filter products by category
-    if (categoryId) {
-      products = products.filter((product: any) => product.categoryId === categoryId);
+    // Price Range Filter
+    if (minPrice || maxPrice) {
+      filter.actualPrice = {};
+      if (minPrice) {
+        const min = parseFloat(minPrice);
+        if (!isNaN(min)) {
+          filter.actualPrice.$gte = min;
+        }
+      }
+      if (maxPrice) {
+        const max = parseFloat(maxPrice);
+        if (!isNaN(max)) {
+          filter.actualPrice.$lte = max;
+        }
+      }
     }
-    
-    // Process each product and add it to the appropriate tag groups
-    products.forEach((product: any) => {
-      // Calculate discount percentage for each product
-      const discountPercentage = product.mrp > product.actualPrice 
+
+    // Vitamins Filter
+    if (vitaminsParam) {
+      const vitamins = vitaminsParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (vitamins.length === 1) {
+        filter.vitamins = vitamins[0];
+      } else if (vitamins.length > 1) {
+        filter.vitamins = { $in: vitamins };
+      }
+    }
+
+    // Discount Filter
+    if (discountParam === 'true') {
+      filter.$expr = { $lt: ['$actualPrice', '$mrp'] };
+    }
+
+    // Delivery Filter
+    if (deliveryParam) {
+      const deliveryType = deliveryParam.trim();
+      if (deliveryType === 'Normal Delivery' || deliveryType === 'Expedited Delivery') {
+        filter.delivery = deliveryType;
+      }
+    }
+
+    // Build sort object
+    let sort: any = { createdAt: -1 }; // default: newest first
+    switch (sortBy) {
+      case 'price-asc':
+        sort = { actualPrice: 1 };
+        break;
+      case 'price-desc':
+        sort = { actualPrice: -1 };
+        break;
+      case 'rating-desc':
+        sort = { createdAt: -1 };
+        break;
+      case 'newest':
+      default:
+        sort = { createdAt: -1 };
+        break;
+    }
+
+    // Enforce tag-group restriction when user provided filters but did not explicitly request tags
+    const TAG_GROUPS = ['featured', 'arrival', 'hamper'];
+    const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
+    if (preFilterHasFilters && !tag) {
+      // only consider products that belong to one of the tag groups
+      filter.tags = { $in: TAG_GROUPS };
+      console.log('GET filter: restricting to tag groups', TAG_GROUPS);
+    }
+
+    // Get all products matching the filter with pagination
+    let products = await Product.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Get total count for pagination
+    const totalProducts = await Product.countDocuments(filter);
+    const totalPages = Math.ceil(totalProducts / limit);
+
+    // Fetch reviews for rating calculation
+    const productIds = products.map((p: any) => p.productId);
+    const reviews = await Review.find({
+      productId: { $in: productIds },
+      status: 'approved',
+      isDeleted: false,
+    }).lean();
+
+    // Group reviews by productId
+    const reviewsByProduct: Record<string, any[]> = {};
+    reviews.forEach((review: any) => {
+      if (!reviewsByProduct[review.productId]) {
+        reviewsByProduct[review.productId] = [];
+      }
+      reviewsByProduct[review.productId].push(review);
+    });
+
+    // Process products with ratings and discount
+    let processedProducts = products.map((product: any) => {
+      const productReviews = reviewsByProduct[product.productId] || [];
+      const totalReviews = productReviews.length;
+      const averageRating = totalReviews > 0
+        ? productReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / totalReviews
+        : 0;
+
+      const discountPercentage = product.mrp > product.actualPrice
         ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
         : 0;
-      
-      const productWithDiscount = {
+
+      return {
         ...product,
-        discountPercentage
+        averageRating: parseFloat(averageRating.toFixed(1)),
+        totalReviews,
+        discountPercentage,
       };
-      
+    });
+
+    // Filter by star rating if specified
+    if (rating) {
+      const minRating = parseFloat(rating);
+      if (!isNaN(minRating) && minRating >= 1 && minRating <= 5) {
+        processedProducts = processedProducts.filter(
+          (p: any) => p.averageRating >= minRating
+        );
+      }
+    }
+
+    // Sort by rating if requested
+    if (sortBy === 'rating-desc') {
+      processedProducts.sort((a: any, b: any) => b.averageRating - a.averageRating);
+    }
+
+    // Adjust total count if rating filter was applied
+    const finalCount = rating ? processedProducts.length : totalProducts;
+    const finalTotalPages = rating ? Math.ceil(finalCount / limit) : totalPages;
+    
+    // Initialize the result object with arrays for each tag
+    const result: any = { tags: {} };
+
+    // Define the tags we want to group by
+    const tagGroups = ['featured', 'arrival', 'hamper'];
+
+    // Initialize each tag group with an empty array
+    tagGroups.forEach((tag) => {
+      result.tags[tag] = [];
+    });
+
+    // Process each product and add it to the appropriate tag arrays
+    processedProducts.forEach((product: any) => {
       if (product.tags && Array.isArray(product.tags)) {
         // Convert all tags to lowercase for case-insensitive matching
-        const productTags = product.tags.map((t: string) => t?.toLowerCase?.());
-        
-        // Add product to each matching tag group
-        tagGroups.forEach(tag => {
+        const productTags = product.tags.map((t: string) => (t && typeof t.toLowerCase === 'function') ? t.toLowerCase() : String(t).toLowerCase());
+
+        // Add product to each matching tag array
+        tagGroups.forEach((tag) => {
           if (productTags.includes(tag)) {
-            result.tags[tag].products.push(productWithDiscount);
+            result.tags[tag].push(product);
           }
         });
       }
     });
     
+    // Check if any filters are applied (excluding pagination and sort)
+    const hasFilters = minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam;
+    
+    // Return response with tags structure and additional filter info if filters applied
+    if (hasFilters) {
+      return NextResponse.json({ 
+        status: 200, 
+        message: 'Products filtered successfully', 
+        data: {
+          ...result,
+          pagination: {
+            currentPage: page,
+            totalPages: finalTotalPages,
+            totalProducts: finalCount,
+            limit,
+            hasNextPage: page < finalTotalPages,
+            hasPrevPage: page > 1,
+          },
+          appliedFilters: {
+            minPrice: minPrice ? parseFloat(minPrice) : null,
+            maxPrice: maxPrice ? parseFloat(maxPrice) : null,
+            rating: rating ? parseFloat(rating) : null,
+            categoryId: categoryId || null,
+            dietary: dietaryParam ? dietaryParam.split(',').map(s => s.trim()) : [],
+            vitamins: vitaminsParam ? vitaminsParam.split(',').map(s => s.trim()) : [],
+            discount: discountParam === 'true',
+            delivery: deliveryParam || null,
+            sortBy,
+          },
+        }
+      }, { status: 200 });
+    }
+    
+    // If no filters, return grouped by tags only (original behavior)
     return NextResponse.json({ 
       status: 200, 
       message: 'Products fetched and grouped by tags', 
-      data: result 
+      data: result
     }, { status: 200 });
   } catch (error: any) {
     console.error('GET /api/product error', error);
@@ -166,7 +332,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST handles create / edit / delete via `action` (create | edit | delete)
+// POST handles create / edit / delete via `action` (create | edit | delete | filter)
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
@@ -198,6 +364,216 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       // ignore
+    }
+
+    // Handle filter action with body payload
+    if (action === 'filter') {
+      const body = await req.json();
+      console.log('POST /api/product?action=filter - body:', JSON.stringify(body));
+      
+      // Pagination parameters
+      const page = Math.max(1, parseInt(body.page || '1'));
+      const limit = Math.min(100, Math.max(1, parseInt(body.limit || '20')));
+      const skip = (page - 1) * limit;
+
+      // Filter parameters from body
+      const minPrice = body.minPrice;
+      const maxPrice = body.maxPrice;
+      const rating = body.rating;
+      const categoryId = body.categoryId;
+      const dietaryParam = body.dietary;
+      const vitaminsParam = body.vitamins;
+      const discountParam = body.discount;
+      const deliveryParam = body.delivery;
+      const sortBy = body.sortBy || 'newest';
+
+      const filter: any = { isDeleted: false };
+      
+      // Category Filter
+      if (categoryId) filter.categoryId = categoryId;
+      
+      // Dietary Tags Filter
+      if (dietaryParam) {
+        const d = Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (d.length === 1) filter.dietary = d[0];
+        else if (d.length > 1) filter.dietary = { $in: d };
+      }
+
+      // Price Range Filter
+      if (minPrice || maxPrice) {
+        filter.actualPrice = {};
+        if (minPrice) {
+          const min = parseFloat(minPrice);
+          if (!isNaN(min)) {
+            filter.actualPrice.$gte = min;
+          }
+        }
+        if (maxPrice) {
+          const max = parseFloat(maxPrice);
+          if (!isNaN(max)) {
+            filter.actualPrice.$lte = max;
+          }
+        }
+      }
+
+      // Vitamins Filter
+      if (vitaminsParam) {
+        const vitamins = Array.isArray(vitaminsParam) ? vitaminsParam : vitaminsParam.split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (vitamins.length === 1) {
+          filter.vitamins = vitamins[0];
+        } else if (vitamins.length > 1) {
+          filter.vitamins = { $in: vitamins };
+        }
+      }
+
+      // Discount Filter
+      if (discountParam === true || discountParam === 'true') {
+        filter.$expr = { $lt: ['$actualPrice', '$mrp'] };
+      }
+
+      // Delivery Filter
+      if (deliveryParam) {
+        const deliveryType = String(deliveryParam).trim();
+        if (deliveryType === 'Normal Delivery' || deliveryType === 'Expedited Delivery') {
+          filter.delivery = deliveryType;
+        }
+      }
+
+      // Build sort object
+      let sort: any = { createdAt: -1 };
+      switch (sortBy) {
+        case 'price-asc':
+          sort = { actualPrice: 1 };
+          break;
+        case 'price-desc':
+          sort = { actualPrice: -1 };
+          break;
+        case 'rating-desc':
+          sort = { createdAt: -1 };
+          break;
+        case 'newest':
+        default:
+          sort = { createdAt: -1 };
+          break;
+      }
+
+      // Enforce tag-group restriction when user did not explicitly provide tags
+      const TAG_GROUPS = ['featured', 'arrival', 'hamper'];
+      const bodyTagsProvided = body && (body.tags || body.tag);
+      if (!bodyTagsProvided) {
+        filter.tags = { $in: TAG_GROUPS };
+        console.log('POST filter: restricting to tag groups', TAG_GROUPS);
+      }
+
+      // Get all products matching the filter with pagination
+      let products = await Product.find(filter)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      // Get total count for pagination
+      const totalProducts = await Product.countDocuments(filter);
+      const totalPages = Math.ceil(totalProducts / limit);
+
+      // Fetch reviews for rating calculation
+      const productIds = products.map((p: any) => p.productId);
+      const reviews = await Review.find({
+        productId: { $in: productIds },
+        status: 'approved',
+        isDeleted: false,
+      }).lean();
+
+      // Group reviews by productId
+      const reviewsByProduct: Record<string, any[]> = {};
+      reviews.forEach((review: any) => {
+        if (!reviewsByProduct[review.productId]) {
+          reviewsByProduct[review.productId] = [];
+        }
+        reviewsByProduct[review.productId].push(review);
+      });
+
+      // Process products with ratings and discount
+      let processedProducts = products.map((product: any) => {
+        const productReviews = reviewsByProduct[product.productId] || [];
+        const totalReviews = productReviews.length;
+        const averageRating = totalReviews > 0
+          ? productReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / totalReviews
+          : 0;
+
+        const discountPercentage = product.mrp > product.actualPrice
+          ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
+          : 0;
+
+        return {
+          ...product,
+          averageRating: parseFloat(averageRating.toFixed(1)),
+          totalReviews,
+          discountPercentage,
+        };
+      });
+
+      // Filter by star rating if specified
+      if (rating) {
+        const minRating = parseFloat(rating);
+        if (!isNaN(minRating) && minRating >= 1 && minRating <= 5) {
+          processedProducts = processedProducts.filter(
+            (p: any) => p.averageRating >= minRating
+          );
+        }
+      }
+
+      // Sort by rating if requested
+      if (sortBy === 'rating-desc') {
+        processedProducts.sort((a: any, b: any) => b.averageRating - a.averageRating);
+      }
+
+      // Adjust total count if rating filter was applied
+      const finalCount = rating ? processedProducts.length : totalProducts;
+      const finalTotalPages = rating ? Math.ceil(finalCount / limit) : totalPages;
+
+      // Build grouped tags response (featured, arrival, hamper) as arrays
+      const tagGroups = ['featured', 'arrival', 'hamper'];
+      const result: any = { tags: {} };
+      tagGroups.forEach((t) => { result.tags[t] = []; });
+
+      processedProducts.forEach((product: any) => {
+        if (product.tags && Array.isArray(product.tags)) {
+          const productTags = product.tags.map((x: string) => (x && typeof x.toLowerCase === 'function') ? x.toLowerCase() : String(x).toLowerCase());
+          tagGroups.forEach((tg) => {
+            if (productTags.includes(tg)) {
+              result.tags[tg].push(product);
+            }
+          });
+        }
+      });
+
+      return NextResponse.json({ 
+        status: 200, 
+        message: 'Products filtered successfully', 
+        data: {
+          ...result,
+          pagination: {
+            currentPage: page,
+            totalPages: finalTotalPages,
+            totalProducts: finalCount,
+            limit,
+            hasNextPage: page < finalTotalPages,
+            hasPrevPage: page > 1,
+          },
+          appliedFilters: {
+            minPrice: minPrice ? parseFloat(minPrice) : null,
+            maxPrice: maxPrice ? parseFloat(maxPrice) : null,
+            rating: rating ? parseFloat(rating) : null,
+            categoryId: categoryId || null,
+            dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : dietaryParam.split(',').map((s: string) => s.trim())) : [],
+            vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : vitaminsParam.split(',').map((s: string) => s.trim())) : [],
+            discount: discountParam === true || discountParam === 'true',
+            delivery: deliveryParam || null,
+            sortBy,
+          },
+        }
+      }, { status: 200 });
     }
 
     if (contentType.includes('application/json')) {

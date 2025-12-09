@@ -36,13 +36,73 @@
 
 ## 2. Product Catalog
 
-### List Products
+### List Products with Filters (POST)
+- **Endpoint:** `POST /product?action=filter`
+- **Body:**
+  ```json
+  {
+    "page": 1,
+    "limit": 20,
+    "minPrice": 100,
+    "maxPrice": 500,
+    "rating": 4,
+    "categoryId": "category-uuid",
+    "dietary": ["Vegan", "Gluten Free"],
+    "vitamins": ["C", "D"],
+    "discount": true,
+    "delivery": "Normal Delivery",
+    "sortBy": "price-asc"
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "status": 200,
+    "message": "Products filtered successfully",
+    "data": {
+      "products": [...],
+      "pagination": {
+        "currentPage": 1,
+        "totalPages": 5,
+        "totalProducts": 95,
+        "limit": 20,
+        "hasNextPage": true,
+        "hasPrevPage": false
+      },
+      "appliedFilters": {
+        "minPrice": 100,
+        "maxPrice": 500,
+        "rating": 4,
+        "categoryId": "category-uuid",
+        "dietary": ["Vegan", "Gluten Free"],
+        "vitamins": ["C", "D"],
+        "discount": true,
+        "delivery": "Normal Delivery",
+        "sortBy": "price-asc"
+      }
+    }
+  }
+  ```
+
+### List Products (GET - with filters)
 - **Endpoint:** `GET /product`
-- **Query:** `?category={id}&search={term}&page=1&limit=20`
-- **Response:** List of products with pagination
+- **Query Parameters:**
+  - `page` (number, default: 1) - Page number
+  - `limit` (number, default: 20, max: 100) - Items per page
+  - `categoryId` (string) - Filter by category ID
+  - `dietary` (string) - Comma-separated dietary tags (e.g., "Vegan,Gluten Free")
+  - `tag` (string) - Filter by single tag
+  - `minPrice` (number) - Minimum price filter
+  - `maxPrice` (number) - Maximum price filter
+  - `rating` (number, 1-5) - Minimum star rating
+  - `vitamins` (string) - Comma-separated vitamins (e.g., "A,C,D")
+  - `discount` (boolean) - Set to `true` for discounted products only
+  - `delivery` (string) - "Normal Delivery" or "Expedited Delivery"
+  - `sortBy` (string) - Sort option: `price-asc`, `price-desc`, `rating-desc`, `newest` (default)
+- **Example:** `GET /product?minPrice=100&maxPrice=500&rating=4&dietary=Vegan&sortBy=price-asc&page=1&limit=20`
 
 ### Get Product Details
-- **Endpoint:** `GET /product/{id}`
+- **Endpoint:** `GET /product?id={id}`
 
 ### Categories
 - **Endpoint:** `GET /category`
