@@ -90,20 +90,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Process file upload if any
+    // Process file upload if any. Some runtimes may not make `value instanceof File` true,
+    // so detect file-like entries by checking for a `size` property and `arrayBuffer` method.
     if (formData) {
       for (const [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          const file = value as File;
-          if (file.size > 0) {
-            try {
-              const savedPath = await saveUpload(file, 'profile-images', userId);
+        // only process the profileImage field
+        if (key !== 'profileImage') continue;
+
+        const fileLike = value as any;
+        const hasArrayBuffer = fileLike && typeof fileLike.arrayBuffer === 'function';
+        const hasSize = fileLike && typeof fileLike.size === 'number';
+
+        if (fileLike && (hasArrayBuffer || hasSize)) {
+          try {
+            const size = hasSize ? fileLike.size : 0;
+            if (size > 0) {
+              const savedPath = await saveUpload(fileLike, 'profile-images', userId);
               if (savedPath) {
                 updateData.profileImage = savedPath;
               }
-            } catch (error) {
-              console.error('Error uploading file:', error);
             }
+          } catch (error) {
+            console.error('Error uploading file:', error);
           }
         }
       }
