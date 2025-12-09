@@ -612,7 +612,7 @@ export async function POST(req: NextRequest) {
             }
           });
         }
-      });
+      }); 
 
       const _discountBoolPost = String(discountParam).toLowerCase() === 'true' || String(discountParam) === '1';
       const expectedDeliveryPost = !!(deliveryParam);
