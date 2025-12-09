@@ -58,8 +58,8 @@ export async function GET(req: NextRequest) {
     }
     
     const id = url.searchParams.get('id') || url.searchParams.get('productId');
-    const categoryId = url.searchParams.get('categoryId');
-    const dietaryParam = url.searchParams.get('dietary');
+    let categoryId = url.searchParams.get('categoryId');
+    let dietaryParam = url.searchParams.get('dietary');
     const tag = url.searchParams.get('tag');
 
     // Pagination parameters
@@ -68,15 +68,39 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Filter parameters
-    const minPrice = url.searchParams.get('minPrice');
-    const maxPrice = url.searchParams.get('maxPrice');
-    const rating = url.searchParams.get('rating');
-    const vitaminsParam = url.searchParams.get('vitamins');
-    const discountParam = url.searchParams.get('discount');
-    const deliveryParam = url.searchParams.get('delivery');
-    const sortBy = url.searchParams.get('sortBy') || 'newest';
+    let minPrice = url.searchParams.get('minPrice');
+    let maxPrice = url.searchParams.get('maxPrice');
+    let rating = url.searchParams.get('rating');
+    let vitaminsParam = url.searchParams.get('vitamins');
+    let discountParam = url.searchParams.get('discount');
+    let deliveryParam = url.searchParams.get('delivery');
+    let sortBy = url.searchParams.get('sortBy') || 'newest';
 
     console.log('Request parameters:', { id, categoryId, dietaryParam, tag, page, limit, minPrice, maxPrice, rating });
+
+    // Support persistent filters via cookie: if user previously applied filters,
+    // persist them in a `productFilters` cookie. When a subsequent request has
+    // no filter query params, apply the cookie-stored filters automatically.
+    let cookieFilters: any = null;
+    let clearCookie = false;
+    try {
+      const resetParam = url.searchParams.get('reset') || url.searchParams.get('clearFilters');
+      if (resetParam === 'true') {
+        // User requested reset via query param; clear stored filters
+        clearCookie = true;
+      } else {
+        const c = (req as any).cookies?.get && (req as any).cookies.get('productFilters');
+        if (c && c.value) {
+          try {
+            cookieFilters = JSON.parse(decodeURIComponent(c.value));
+          } catch (e) {
+            cookieFilters = null;
+          }
+        }
+      }
+    } catch (e) {
+      cookieFilters = null;
+    }
 
     if (id) {
       console.log('Looking up product with ID:', id);
@@ -115,6 +139,21 @@ export async function GET(req: NextRequest) {
     // Category Filter
     if (categoryId) filter.categoryId = categoryId;
     
+    // If no explicit filters provided in URL but cookieFilters exist, merge them
+    const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
+    if (!preFilterHasFilters && cookieFilters) {
+      // apply only fields that aren't present in the URL
+      if (!minPrice && cookieFilters.minPrice !== undefined && cookieFilters.minPrice !== null) minPrice = String(cookieFilters.minPrice);
+      if (!maxPrice && cookieFilters.maxPrice !== undefined && cookieFilters.maxPrice !== null) maxPrice = String(cookieFilters.maxPrice);
+      if (!rating && cookieFilters.rating !== undefined && cookieFilters.rating !== null) rating = String(cookieFilters.rating);
+      if (!categoryId && cookieFilters.categoryId) categoryId = cookieFilters.categoryId;
+      if (!dietaryParam && cookieFilters.dietary) dietaryParam = Array.isArray(cookieFilters.dietary) ? cookieFilters.dietary.join(',') : String(cookieFilters.dietary);
+      if (!vitaminsParam && cookieFilters.vitamins) vitaminsParam = Array.isArray(cookieFilters.vitamins) ? cookieFilters.vitamins.join(',') : String(cookieFilters.vitamins);
+      if (!discountParam && cookieFilters.discount !== undefined) discountParam = String(cookieFilters.discount);
+      if (!deliveryParam && cookieFilters.delivery) deliveryParam = cookieFilters.delivery;
+      if ((!sortBy || sortBy === 'newest') && cookieFilters.sortBy) sortBy = cookieFilters.sortBy;
+    }
+
     // Dietary Tags Filter
     if (dietaryParam) {
       const d = String(dietaryParam || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -187,7 +226,7 @@ export async function GET(req: NextRequest) {
 
     // Enforce tag-group restriction when user provided filters but did not explicitly request tags
     const TAG_GROUPS = ['featured', 'arrival', 'hamper'];
-    const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
+    // Enforce tag-group restriction when user provided filters but did not explicitly request tags
     if (preFilterHasFilters && !tag) {
       // only consider products that belong to one of the tag groups
       filter.tags = { $in: TAG_GROUPS };
@@ -288,11 +327,24 @@ export async function GET(req: NextRequest) {
     });
     
     // Check if any filters are applied (excluding pagination and sort)
-    const hasFilters = minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam;
-    
+    const hasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
+
+    // Build appliedFilters object for cookie and response
+    const appliedFilters = {
+      minPrice: minPrice ? parseFloat(minPrice) : null,
+      maxPrice: maxPrice ? parseFloat(maxPrice) : null,
+      rating: rating ? parseFloat(rating) : null,
+      categoryId: categoryId || null,
+      dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam).split(',').map((s: string) => s.trim())) : [],
+      vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
+      discount: discountParam === 'true' || discountParam === '1',
+      delivery: deliveryParam || null,
+      sortBy,
+    };
+
     // Return response with tags structure and additional filter info if filters applied
-    if (hasFilters) {
-      return NextResponse.json({ 
+    if (hasFilters || cookieFilters || clearCookie) {
+      const respBody = { 
         status: 200, 
         message: 'Products filtered successfully', 
         data: {
@@ -305,19 +357,25 @@ export async function GET(req: NextRequest) {
             hasNextPage: page < finalTotalPages,
             hasPrevPage: page > 1,
           },
-          appliedFilters: {
-            minPrice: minPrice ? parseFloat(minPrice) : null,
-            maxPrice: maxPrice ? parseFloat(maxPrice) : null,
-            rating: rating ? parseFloat(rating) : null,
-            categoryId: categoryId || null,
-            dietary: dietaryParam ? dietaryParam.split(',').map(s => s.trim()) : [],
-            vitamins: vitaminsParam ? vitaminsParam.split(',').map(s => s.trim()) : [],
-            discount: discountParam === 'true',
-            delivery: deliveryParam || null,
-            sortBy,
-          },
+          appliedFilters,
         }
-      }, { status: 200 });
+      };
+
+      const res = NextResponse.json(respBody, { status: 200 });
+      try {
+        if (clearCookie) {
+          // Clear the cookie
+          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
+        } else {
+          // Persist filters in cookie for subsequent requests (7 days)
+          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+          res.headers.set('Set-Cookie', cookieStr);
+        }
+      } catch (e) {
+        // ignore cookie set errors
+      }
+
+      return res;
     }
     
     // If no filters, return grouped by tags only (original behavior)
@@ -548,9 +606,21 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      return NextResponse.json({ 
-        status: 200, 
-        message: 'Products filtered successfully', 
+      const appliedFilters = {
+        minPrice: minPrice ? parseFloat(minPrice) : null,
+        maxPrice: maxPrice ? parseFloat(maxPrice) : null,
+        rating: rating ? parseFloat(rating) : null,
+        categoryId: categoryId || null,
+        dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam).split(',').map((s: string) => s.trim())) : [],
+        vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
+        discount: discountParam === true || discountParam === 'true',
+        delivery: deliveryParam || null,
+        sortBy,
+      };
+
+      const respBody = {
+        status: 200,
+        message: 'Products filtered successfully',
         data: {
           ...result,
           pagination: {
@@ -561,19 +631,24 @@ export async function POST(req: NextRequest) {
             hasNextPage: page < finalTotalPages,
             hasPrevPage: page > 1,
           },
-          appliedFilters: {
-            minPrice: minPrice ? parseFloat(minPrice) : null,
-            maxPrice: maxPrice ? parseFloat(maxPrice) : null,
-            rating: rating ? parseFloat(rating) : null,
-            categoryId: categoryId || null,
-            dietary: dietaryParam ? (Array.isArray(dietaryParam) ? dietaryParam : dietaryParam.split(',').map((s: string) => s.trim())) : [],
-            vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : vitaminsParam.split(',').map((s: string) => s.trim())) : [],
-            discount: discountParam === true || discountParam === 'true',
-            delivery: deliveryParam || null,
-            sortBy,
-          },
+          appliedFilters,
         }
-      }, { status: 200 });
+      };
+
+      const res = NextResponse.json(respBody, { status: 200 });
+      try {
+        // If client requested reset via body.reset === true, clear cookie
+        if (body && (body.reset === true || body.clearFilters === true)) {
+          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
+        } else {
+          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+          res.headers.set('Set-Cookie', cookieStr);
+        }
+      } catch (e) {
+        // ignore cookie set errors
+      }
+
+      return res;
     }
 
     if (contentType.includes('application/json')) {
