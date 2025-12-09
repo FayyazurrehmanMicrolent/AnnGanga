@@ -636,18 +636,19 @@ export async function POST(req: NextRequest) {
       const respBody = {
         status: 200,
         message: 'Products filtered successfully',
-        data: {
-          ...result,
-          pagination: {
-            currentPage: page,
-            totalPages: finalTotalPages,
-            totalProducts: finalCount,
-            limit,
-            hasNextPage: page < finalTotalPages,
-            hasPrevPage: page > 1,
-          },
-          appliedFilters,
-        }
+        data:[]
+        // data: {
+        //   ...result,
+        //   pagination: {
+        //     currentPage: page,
+        //     totalPages: finalTotalPages,
+        //     totalProducts: finalCount,
+        //     limit,
+        //     hasNextPage: page < finalTotalPages,
+        //     hasPrevPage: page > 1,
+        //   },
+        //   appliedFilters,
+        // }
       };
 
       const res = NextResponse.json(respBody, { status: 200 });
