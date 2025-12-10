@@ -425,7 +425,7 @@ export async function GET(req: NextRequest) {
     // If no filters, return grouped by tags only (original behavior)
     return NextResponse.json({ 
       status: 200, 
-      message: 'Products fetched and grouped by tags', 
+      message: 'kfsdk afdhjgf as grouped by tags', 
       data: result
     }, { status: 200 });
   } catch (error: any) {
