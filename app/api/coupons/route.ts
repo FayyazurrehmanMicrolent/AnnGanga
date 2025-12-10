@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Coupon from '@/models/coupon';
+import Cart from '@/models/cart';
 
 // Helper: find coupon by couponId or _id
 async function findCouponByIdSafe(id: string) {
@@ -51,11 +52,37 @@ export async function GET(req: NextRequest) {
 
         const coupons = await Coupon.find(query).sort({ createdAt: -1 }).lean();
 
+        // If client passes userId, mark which coupon is applied on that user's cart
+        const userId = url.searchParams.get('userId');
+        let cart: any = null;
+        if (userId) {
+            try {
+                cart = await Cart.findOne({ userId }).lean();
+            } catch (err) {
+                // ignore cart errors, still return coupons
+                console.error('Error fetching cart for coupon GET:', err);
+            }
+        }
+
+        const couponsWithApplied = coupons.map((c: any) => {
+            const isApplied = !!(
+                cart && cart.appliedCoupon && (
+                    (cart.appliedCoupon.couponId && cart.appliedCoupon.couponId === c.couponId) ||
+                    (cart.appliedCoupon.code && cart.appliedCoupon.code === c.code)
+                )
+            );
+            return {
+                ...c,
+                isApplied,
+                appliedToProducts: isApplied ? (cart?.appliedCoupon?.appliedToProducts || []) : [],
+            };
+        });
+
         return NextResponse.json(
             {
                 status: 200,
                 message: 'Coupons fetched successfully',
-                data: coupons,
+                data: couponsWithApplied,
             },
             { status: 200 }
         );

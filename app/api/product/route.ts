@@ -3,6 +3,7 @@ import connectDB from '@/lib/db';
 import Product from '@/models/product';
 import Category from '@/models/category';
 import Review from '@/models/review';
+import Cart from '@/models/cart';
 import { saveUpload } from '@/lib/upload';
 import fs from 'fs';
 import path from 'path';
@@ -261,7 +262,18 @@ export async function GET(req: NextRequest) {
       reviewsByProduct[review.productId].push(review);
     });
 
-    // Process products with ratings and discount
+    // If userId provided, fetch the user's cart to determine applied coupon per-product
+    const userIdForCoupons = url.searchParams.get('userId');
+    let userCart: any = null;
+    if (userIdForCoupons) {
+      try {
+        userCart = await Cart.findOne({ userId: userIdForCoupons }).lean();
+      } catch (e) {
+        userCart = null;
+      }
+    }
+
+    // Process products with ratings, discount and coupon-applied flags
     let processedProducts = products.map((product: any) => {
       const productReviews = reviewsByProduct[product.productId] || [];
       const totalReviews = productReviews.length;
@@ -273,11 +285,35 @@ export async function GET(req: NextRequest) {
         ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
         : 0;
 
+      // Determine if coupon is applied to this product for the requesting user
+      let couponApplied = false;
+      let appliedCouponDetails: any = null;
+      try {
+        if (userCart && userCart.appliedCoupon && Array.isArray(userCart.appliedCoupon.appliedToProducts)) {
+          if (userCart.appliedCoupon.appliedToProducts.includes(product.productId)) {
+            couponApplied = true;
+            appliedCouponDetails = {
+              couponId: userCart.appliedCoupon.couponId || null,
+              code: userCart.appliedCoupon.code || null,
+              discount: userCart.appliedCoupon.discount || 0,
+              discountType: userCart.appliedCoupon.discountType || null,
+              discountValue: userCart.appliedCoupon.discountValue || null,
+              appliedAt: userCart.appliedCoupon.appliedAt || null,
+            };
+          }
+        }
+      } catch (e) {
+        couponApplied = false;
+        appliedCouponDetails = null;
+      }
+
       return {
         ...product,
         averageRating: parseFloat(averageRating.toFixed(1)),
         totalReviews,
         discountPercentage,
+        couponApplied,
+        appliedCoupon: appliedCouponDetails,
       };
     });
 

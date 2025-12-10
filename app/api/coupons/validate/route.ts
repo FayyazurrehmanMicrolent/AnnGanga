@@ -1,16 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Coupon from '@/models/coupon';
+import Cart from '@/models/cart';
+import { verifyToken } from '@/lib/auth';
+
+// Helper to extract userId from Authorization header (Bearer) or authToken cookie
+async function getUserIdFromToken(req: Request | any) {
+    // Authorization header
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded: any = verifyToken(token);
+            if (decoded && decoded.userId) return decoded.userId;
+        } catch (e) {
+            // ignore invalid token
+        }
+    }
+
+    // Cookie fallback
+    try {
+        const cookieToken = req.cookies?.get && req.cookies.get('authToken')?.value;
+        if (cookieToken) {
+            try {
+                const decoded: any = verifyToken(cookieToken);
+                if (decoded && decoded.userId) return decoded.userId;
+            } catch (e) {
+                // ignore
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    return null;
+}
 
 export async function POST(req: NextRequest) {
     try {
         await connectDB();
 
         const body = await req.json();
-        const { code, userId, cartTotal, items } = body;
+        const { code: bodyCode, userId: bodyUserId, cartTotal, items } = body;
+
+        // Prefer authenticated user id (from token/cookie) when present
+        const tokenUserId = await getUserIdFromToken(req as any);
+        const userId = tokenUserId || bodyUserId;
 
         // Validation
-        if (!code || !String(code).trim()) {
+        if (!bodyCode || !String(bodyCode).trim()) {
             return NextResponse.json(
                 { status: 400, message: 'Coupon code is required', valid: false, data: {} },
                 { status: 400 }
@@ -32,7 +70,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Find coupon (case-insensitive)
-        const upperCode = String(code).trim().toUpperCase();
+        const upperCode = String(bodyCode).trim().toUpperCase();
         const coupon = await Coupon.findOne({ code: upperCode, isDeleted: false });
 
         if (!coupon) {
@@ -117,6 +155,9 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Handle remove request: if client wants to remove applied coupon from cart
+        const { apply, remove } = body as any;
+
         // Calculate discount
         let discount = 0;
         if (coupon.discountType === 'percentage') {
@@ -136,6 +177,81 @@ export async function POST(req: NextRequest) {
         // Round to 2 decimal places
         discount = Math.round(discount * 100) / 100;
         const finalTotal = Math.max(0, cartTotal - discount);
+
+        // If remove flag sent, clear appliedCoupon from cart
+        if (remove) {
+            try {
+                await Cart.findOneAndUpdate({ userId }, { $set: { appliedCoupon: null } });
+            } catch (err) {
+                console.error('Error removing applied coupon from cart:', err);
+            }
+
+            return NextResponse.json(
+                { status: 200, message: 'Coupon removed from cart', valid: true, data: {} },
+                { status: 200 }
+            );
+        }
+
+        // If apply/save flag sent, store applied coupon into user's cart
+        const { selectedProductId } = body as any;
+        if (apply) {
+            try {
+                // Determine products to which coupon applies
+                let appliedToProducts: string[] = [];
+                if (selectedProductId) {
+                    // If a specific product was selected on the client, only apply to that product
+                    // but ensure it's present in the items list and coupon is applicable to it
+                    const selectedInItems = items && Array.isArray(items) && items.some((it: any) => it.productId === selectedProductId);
+                    if (selectedInItems) {
+                        const isApplicableByProduct = !coupon.applicableProducts || coupon.applicableProducts.length === 0 || coupon.applicableProducts.includes(selectedProductId);
+                        const matchesCategory = !coupon.applicableCategories || coupon.applicableCategories.length === 0 || items.some((it: any) => it.productId === selectedProductId && coupon.applicableCategories.includes(it.categoryId));
+                        if (isApplicableByProduct && matchesCategory) {
+                            appliedToProducts = [selectedProductId];
+                        } else {
+                            // fall back to the broader logic if selected product isn't applicable
+                            appliedToProducts = [];
+                        }
+                    }
+                }
+
+                if (appliedToProducts.length === 0) {
+                    if (items && Array.isArray(items) && items.length > 0) {
+                        if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
+                            appliedToProducts = items
+                                .filter((it: any) => coupon.applicableProducts.includes(it.productId))
+                                .map((it: any) => it.productId);
+                        } else if (coupon.applicableCategories && coupon.applicableCategories.length > 0) {
+                            appliedToProducts = items
+                                .filter((it: any) => coupon.applicableCategories.includes(it.categoryId))
+                                .map((it: any) => it.productId);
+                        } else {
+                            appliedToProducts = items.map((it: any) => it.productId);
+                        }
+                    }
+                }
+
+                const appliedObj: any = {
+                    couponId: coupon.couponId,
+                    code: coupon.code,
+                    discount,
+                    discountType: coupon.discountType || null,
+                    discountValue: coupon.discountValue || null,
+                    appliedToProducts,
+                    appliedAt: new Date(),
+                };
+
+                const existingCart = await Cart.findOne({ userId });
+                if (existingCart) {
+                    existingCart.appliedCoupon = appliedObj;
+                    await existingCart.save();
+                } else {
+                    const newCart = new Cart({ userId, items: [], appliedCoupon: appliedObj });
+                    await newCart.save();
+                }
+            } catch (err) {
+                console.error('Error saving applied coupon to cart:', err);
+            }
+        }
 
         return NextResponse.json(
             {

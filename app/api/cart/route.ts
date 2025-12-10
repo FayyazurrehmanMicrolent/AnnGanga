@@ -76,6 +76,21 @@ export async function GET(req: NextRequest) {
 
         const subtotal = cartItemsWithDetails.reduce((sum: any, item: { total: any; }) => sum + item.total, 0);
 
+        // Include appliedCoupon details if present on the cart
+        const appliedCoupon = cart.appliedCoupon
+            ? {
+                  couponId: cart.appliedCoupon.couponId || null,
+                  code: cart.appliedCoupon.code || null,
+                  discount: cart.appliedCoupon.discount || 0,
+                  discountType: cart.appliedCoupon.discountType || null,
+                  discountValue: cart.appliedCoupon.discountValue || null,
+                  appliedToProducts: Array.isArray(cart.appliedCoupon.appliedToProducts)
+                      ? cart.appliedCoupon.appliedToProducts
+                      : [],
+                  appliedAt: cart.appliedCoupon.appliedAt || null,
+              }
+            : null;
+
         return NextResponse.json(
             {
                 status: 200,
@@ -85,6 +100,7 @@ export async function GET(req: NextRequest) {
                     items: cartItemsWithDetails,
                     itemCount: cart.items.length,
                     subtotal,
+                    appliedCoupon,
                 },
             },
             { status: 200 }
@@ -338,3 +354,4 @@ export async function POST(req: NextRequest) {
         );
     }
 }
+ 

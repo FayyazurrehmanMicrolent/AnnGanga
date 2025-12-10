@@ -12,6 +12,15 @@ interface ICart extends Document {
     cartId: string;
     userId: string;
     items: ICartItem[];
+    appliedCoupon?: {
+        couponId: string | null;
+        code: string | null;
+        discount: number;
+        discountType?: 'percentage' | 'fixed' | null;
+        discountValue?: number | null;
+        appliedToProducts?: string[];
+        appliedAt?: Date | null;
+    } | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -59,6 +68,18 @@ const cartSchema = new Schema<ICart>(
         items: {
             type: [cartItemSchema],
             default: [],
+        },
+        appliedCoupon: {
+            type: {
+                couponId: { type: String, default: null },
+                code: { type: String, default: null },
+                discount: { type: Number, default: 0, min: 0 },
+                discountType: { type: String, enum: ['percentage', 'fixed'], default: null },
+                discountValue: { type: Number, default: null },
+                appliedToProducts: { type: [String], default: [] },
+                appliedAt: { type: Date, default: null },
+            },
+            default: null,
         },
     },
     {
