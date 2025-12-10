@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     let clearCookie = false;
     try {
       const resetParam = url.searchParams.get('reset') || url.searchParams.get('clearFilters');
-      if (resetParam === 'true') {
+      if (resetParam === 'false') {
         // User requested reset via query param; clear stored filters
         clearCookie = true;
       } else {
@@ -425,7 +425,7 @@ export async function GET(req: NextRequest) {
     // If no filters, return grouped by tags only (original behavior)
     return NextResponse.json({ 
       status: 200, 
-      message: 'kfsdk afdhjgf as grouped by tags', 
+      message: 'Products feched and grouped by tags', 
       data: result
     }, { status: 200 });
   } catch (error: any) {
@@ -690,7 +690,7 @@ export async function POST(req: NextRequest) {
       const res = NextResponse.json(respBody, { status: 200 });
       try {
         // If client requested reset via body.reset === true, clear cookie
-        if (body && (body.reset === true || body.clearFilters === true)) {
+        if (body && (body.reset === false || body.clearFilters === true)) {
           res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
         } else {
           const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
