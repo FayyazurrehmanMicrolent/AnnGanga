@@ -106,6 +106,10 @@ export async function POST(req: NextRequest) {
                 lat,
                 lng,
                 isDefault,
+                email,
+                country,
+                addressType,
+                isPrimary,
             } = data;
 
             // Validation
@@ -163,19 +167,27 @@ export async function POST(req: NextRequest) {
                 await Address.updateMany({ userId, isDeleted: false }, { isDefault: false });
             }
 
+            if (isPrimary) {
+                await Address.updateMany({ userId, isDeleted: false }, { isPrimary: false });
+            }
+
             const newAddress = new Address({
                 userId,
                 label: label || 'Home',
+                addressType: addressType || (label || 'Home'),
                 name: String(name).trim(),
                 phone: String(phone).trim(),
+                email: email ? String(email).trim() : null,
                 address: String(address).trim(),
                 landmark: landmark ? String(landmark).trim() : null,
                 city: String(city).trim(),
                 state: String(state).trim(),
+                country: country ? String(country).trim() : null,
                 pincode: String(pincode).trim(),
                 lat: lat ? Number(lat) : null,
                 lng: lng ? Number(lng) : null,
                 isDefault: Boolean(isDefault),
+                isPrimary: Boolean(isPrimary),
             });
 
             await newAddress.save();
@@ -213,6 +225,10 @@ export async function POST(req: NextRequest) {
                 address.label = data.label;
             }
 
+            if (data.addressType !== undefined && ['Home', 'Work', 'Other', 'OtherDetailed'].includes(data.addressType)) {
+                address.addressType = data.addressType;
+            }
+
             if (data.name !== undefined) {
                 const trimmedName = String(data.name || '').trim();
                 if (!trimmedName) {
@@ -233,6 +249,14 @@ export async function POST(req: NextRequest) {
                     );
                 }
                 address.phone = phoneStr;
+            }
+
+            if (data.email !== undefined) {
+                const e = data.email ? String(data.email).trim() : '';
+                if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) {
+                    return NextResponse.json({ status: 400, message: 'Invalid email address', data: {} }, { status: 400 });
+                }
+                address.email = e || null;
             }
 
             if (data.address !== undefined) {
@@ -286,6 +310,8 @@ export async function POST(req: NextRequest) {
             if (data.lat !== undefined) address.lat = data.lat ? Number(data.lat) : null;
             if (data.lng !== undefined) address.lng = data.lng ? Number(data.lng) : null;
 
+            if (data.country !== undefined) address.country = data.country ? String(data.country).trim() : null;
+
             // Handle default flag
             if (data.isDefault !== undefined && Boolean(data.isDefault)) {
                 // Unset other defaults for this user
@@ -296,6 +322,17 @@ export async function POST(req: NextRequest) {
                 address.isDefault = true;
             } else if (data.isDefault === false) {
                 address.isDefault = false;
+            }
+
+            // Handle primary flag
+            if (data.isPrimary !== undefined && Boolean(data.isPrimary)) {
+                await Address.updateMany(
+                    { userId: address.userId, isDeleted: false, _id: { $ne: address._id } },
+                    { isPrimary: false }
+                );
+                address.isPrimary = true;
+            } else if (data.isPrimary === false) {
+                address.isPrimary = false;
             }
 
             await address.save();

@@ -5,16 +5,20 @@ interface IAddress extends Document {
     addressId: string;
     userId: string;
     label: 'Home' | 'Work' | 'Other';
+        addressType?: 'Home' | 'Work' | 'Other' | 'OtherDetailed';
     name: string;
     phone: string;
+        email?: string | null;
     address: string;
     landmark?: string;
     city: string;
     state: string;
+        country?: string | null;
     pincode: string;
     lat?: number;
     lng?: number;
     isDefault: boolean;
+    isPrimary?: boolean;
     isDeleted: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -38,6 +42,11 @@ const addressSchema = new Schema<IAddress>(
             enum: ['Home', 'Work', 'Other'],
             default: 'Home',
         },
+        addressType: {
+            type: String,
+            enum: ['Home', 'Work', 'Other', 'OtherDetailed'],
+            default: 'Home',
+        },
         name: {
             type: String,
             required: true,
@@ -51,6 +60,19 @@ const addressSchema = new Schema<IAddress>(
                     return /^\d{10}$/.test(value);
                 },
                 message: 'Phone number must be exactly 10 digits',
+            },
+        },
+        email: {
+            type: String,
+            trim: true,
+            default: null,
+            validate: {
+                validator: function (v: string) {
+                    if (v === null || typeof v === 'undefined' || v === '') return true;
+                    // basic email regex
+                    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+                },
+                message: 'Invalid email address',
             },
         },
         address: {
@@ -73,6 +95,11 @@ const addressSchema = new Schema<IAddress>(
             required: true,
             trim: true,
         },
+        country: {
+            type: String,
+            trim: true,
+            default: null,
+        },
         pincode: {
             type: String,
             required: true,
@@ -92,6 +119,10 @@ const addressSchema = new Schema<IAddress>(
             default: null,
         },
         isDefault: {
+            type: Boolean,
+            default: false,
+        },
+        isPrimary: {
             type: Boolean,
             default: false,
         },
