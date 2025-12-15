@@ -92,8 +92,8 @@ const addressSchema = new Schema<IAddress>(
         },
         state: {
             type: String,
-            required: true,
             trim: true,
+            default: null,
         },
         country: {
             type: String,

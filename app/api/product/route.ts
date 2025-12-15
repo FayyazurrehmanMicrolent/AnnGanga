@@ -394,15 +394,15 @@ export async function GET(req: any) {
         message: 'Products filtered successfully',
         data: {
           ...result,
-          // pagination: {
-          //   currentPage: page,
-          //   totalPages: finalTotalPages,
-          //   totalProducts: finalCount,
-          //   limit,
-          //   hasNextPage: page < finalTotalPages,
-          //   hasPrevPage: page > 1,
-          // },
-          // appliedFilters,
+          pagination: {
+            currentPage: page,
+            totalPages: finalTotalPages,
+            totalProducts: finalCount,
+            limit,
+            hasNextPage: page < finalTotalPages,
+            hasPrevPage: page > 1,
+          },
+          appliedFilters,   
         }
       };
 
@@ -681,16 +681,16 @@ export async function POST(req: NextRequest) {
         status: 200,
         message: 'Products filtered successfully',
         data: {
-          // ...result,
-          // pagination: {
-          //   currentPage: page,
-          //   totalPages: finalTotalPages,
-          //   totalProducts: finalCount,
-          //   limit,
-          //   hasNextPage: page < finalTotalPages,
-          //   hasPrevPage: page > 1,
-          // },
-          // appliedFilters,
+          ...result,
+          pagination: {
+            currentPage: page,
+            totalPages: finalTotalPages,
+            totalProducts: finalCount,
+            limit,
+            hasNextPage: page < finalTotalPages,
+            hasPrevPage: page > 1,
+          },
+          appliedFilters,
         }
       };
 
