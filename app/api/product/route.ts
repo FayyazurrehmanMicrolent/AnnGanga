@@ -240,7 +240,7 @@ export async function GET(req: any) {
       .limit(limit)
       .lean();
 
-    // Get total count for pagination
+    // Get total count for pagination 
     const totalProducts = await Product.countDocuments(filter);
     const totalPages = Math.ceil(totalProducts / limit);
 
