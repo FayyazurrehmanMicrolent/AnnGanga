@@ -18,12 +18,24 @@ async function findCouponByIdSafe(id: string) {
 
 export async function GET(req: NextRequest) {
     try {
+        console.log('GET /api/coupons - Starting request');
         await connectDB();
+        console.log('Database connected');
 
-        const url = new URL(req.url);
+        // Parse URL with fallback for relative URLs
+        let url: URL;
+        try {
+            url = new URL(req.url);
+        } catch (e) {
+            const host = req.headers.get('host') || 'localhost:3000';
+            url = new URL(req.url, `http://${host}`);
+        }
+        
         const active = url.searchParams.get('active');
         const expired = url.searchParams.get('expired');
         const search = url.searchParams.get('search');
+        
+        console.log('Query params:', { active, expired, search });
 
         const query: any = { isDeleted: false };
 
@@ -50,7 +62,9 @@ export async function GET(req: NextRequest) {
             ];
         }
 
+        console.log('Coupon query:', JSON.stringify(query));
         const coupons = await Coupon.find(query).sort({ createdAt: -1 }).lean();
+        console.log(`Found ${coupons.length} coupons`);
 
         // If client passes userId, mark which coupon is applied on that user's cart
         const userId = url.searchParams.get('userId');
@@ -78,6 +92,7 @@ export async function GET(req: NextRequest) {
             };
         });
 
+        console.log('Returning response with', couponsWithApplied.length, 'coupons');
         return NextResponse.json(
             {
                 status: 200,
@@ -88,10 +103,12 @@ export async function GET(req: NextRequest) {
         );
     } catch (error: any) {
         console.error('GET /api/coupons error:', error);
+        console.error('Error stack:', error.stack);
         return NextResponse.json(
             {
                 status: 500,
                 message: error.message || 'Failed to fetch coupons',
+                error: error.toString(),
                 data: {},
             },
             { status: 500 }

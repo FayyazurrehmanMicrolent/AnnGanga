@@ -41,7 +41,7 @@ async function findProductByIdSafeLean(id: string) {
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(req: any) {
   try {
     console.log('Connecting to database...');
     await connectDB();
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       const host = req.headers.get('host') || 'localhost:3000';
       url = new URL(req.url, `http://${host}`);
     }
-    
+
     const id = url.searchParams.get('id') || url.searchParams.get('productId');
     let categoryId = url.searchParams.get('categoryId');
     let dietaryParam = url.searchParams.get('dietary');
@@ -77,7 +77,6 @@ export async function GET(req: NextRequest) {
     let deliveryParam = url.searchParams.get('delivery');
     let sortBy = url.searchParams.get('sortBy') || 'newest';
 
-    console.log('Request parameters:', { id, categoryId, dietaryParam, tag, page, limit, minPrice, maxPrice, rating });
 
     // Support persistent filters via cookie: if user previously applied filters,
     // persist them in a `productFilters` cookie. When a subsequent request has
@@ -90,14 +89,14 @@ export async function GET(req: NextRequest) {
         // User requested reset via query param; clear stored filters
         clearCookie = true;
       } else {
-        const c = (req as any).cookies?.get && (req as any).cookies.get('productFilters');
-        if (c && c.value) {
-          try {
-            cookieFilters = JSON.parse(decodeURIComponent(c.value));
-          } catch (e) {
-            cookieFilters = null;
-          }
-        }
+        // const c = (req as any).cookies?.get && (req as any).cookies.get('productFilters');
+        // if (c && c.value) {
+        //   try {
+        //     cookieFilters = JSON.parse(decodeURIComponent(c.value));
+        //   } catch (e) {
+        //     cookieFilters = null;
+        //   }
+        // }
       }
     } catch (e) {
       cookieFilters = null;
@@ -110,36 +109,36 @@ export async function GET(req: NextRequest) {
         if (!product) {
           console.log('Product not found for ID:', id);
           return NextResponse.json(
-            { status: 404, message: 'Product not found', data: {} }, 
+            { status: 404, message: 'Product not found', data: {} },
             { status: 404 }
           );
         }
         console.log('Successfully found product');
-        
+
         // Calculate discount percentage
-        const discountPercentage = product.mrp > product.actualPrice 
+        const discountPercentage = product.mrp > product.actualPrice
           ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
           : 0;
-        
+
         return NextResponse.json(
-          { status: 200, message: 'Product fetched', data: { ...product, discountPercentage } }, 
+          { status: 200, message: 'Product fetched', data: { ...product, discountPercentage } },
           { status: 200 }
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         console.error('Error finding product:', error);
         return NextResponse.json(
-          { status: 500, message: 'Error finding product', error: errorMessage }, 
+          { status: 500, message: 'Error finding product', error: errorMessage },
           { status: 500 }
         );
       }
     }
 
     const filter: any = { isDeleted: false };
-    
+
     // Category Filter
     if (categoryId) filter.categoryId = categoryId;
-    
+
     // If no explicit filters provided in URL but cookieFilters exist, merge them
     const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
     if (!preFilterHasFilters && cookieFilters) {
@@ -161,7 +160,7 @@ export async function GET(req: NextRequest) {
       if (d.length === 1) filter.dietary = d[0];
       else if (d.length > 1) filter.dietary = { $in: d };
     }
-    
+
     // Tag filtering
     if (tag) {
       filter.tags = tag;
@@ -335,7 +334,7 @@ export async function GET(req: NextRequest) {
     // Adjust total count if rating filter was applied
     const finalCount = rating ? processedProducts.length : totalProducts;
     const finalTotalPages = rating ? Math.ceil(finalCount / limit) : totalPages;
-    
+
     // Initialize the result object with arrays for each tag
     const result: any = { tags: {} };
 
@@ -361,7 +360,7 @@ export async function GET(req: NextRequest) {
         });
       }
     });
-    
+
     // Check if any filters are applied (excluding pagination and sort)
     const hasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
 
@@ -386,26 +385,34 @@ export async function GET(req: NextRequest) {
       sortBy,
     };
 
+    // console.log("filterr..........................", appliedFilters);
+
     // Return response with tags structure and additional filter info if filters applied
     if (hasFilters || cookieFilters || clearCookie) {
-      const respBody = { 
-        status: 200, 
-        message: 'Products filtered successfully', 
+      const respBody = {
+        status: 200,
+        message: 'Products filtered successfully',
         data: {
           ...result,
-          pagination: {
-            currentPage: page,
-            totalPages: finalTotalPages,
-            totalProducts: finalCount,
-            limit,
-            hasNextPage: page < finalTotalPages,
-            hasPrevPage: page > 1,
-          },
-          appliedFilters,
+          // pagination: {
+          //   currentPage: page,
+          //   totalPages: finalTotalPages,
+          //   totalProducts: finalCount,
+          //   limit,
+          //   hasNextPage: page < finalTotalPages,
+          //   hasPrevPage: page > 1,
+          // },
+          // appliedFilters,
         }
       };
 
+      console.log("resBody........................................", respBody)
+
+
       const res = NextResponse.json(respBody, { status: 200 });
+      // Cookie persistence disabled - only authToken should be sent
+      // Uncomment below if you need to persist filters in cookies
+      /*
       try {
         if (clearCookie) {
           // Clear the cookie
@@ -418,21 +425,23 @@ export async function GET(req: NextRequest) {
       } catch (e) {
         // ignore cookie set errors
       }
+      */
 
       return res;
     }
-    
+
     // If no filters, return grouped by tags only (original behavior)
-    return NextResponse.json({ 
-      status: 200, 
-      message: 'Products feched and grouped by tags', 
-      data: result
+    return NextResponse.json({
+      status: 200,
+      message: 'Products feched and grouped by tags',
+      data: { ...result }
     }, { status: 200 });
   } catch (error: any) {
     console.error('GET /api/product error', error);
     return NextResponse.json({ status: 500, message: error.message || 'Failed to fetch products', data: {} }, { status: 500 });
   }
 }
+
 
 // POST handles create / edit / delete via `action` (create | edit | delete | filter)
 export async function POST(req: NextRequest) {
@@ -472,7 +481,7 @@ export async function POST(req: NextRequest) {
     if (action === 'filter') {
       const body = await req.json();
       console.log('POST /api/product?action=filter - body:', JSON.stringify(body));
-      
+
       // Pagination parameters
       const page = Math.max(1, parseInt(body.page || '1'));
       const limit = Math.min(100, Math.max(1, parseInt(body.limit || '20')));
@@ -490,10 +499,12 @@ export async function POST(req: NextRequest) {
       const sortBy = body.sortBy || 'newest';
 
       const filter: any = { isDeleted: false };
-      
+
+      console.log('POST filter parameters:', { minPrice, maxPrice, rating, categoryId, dietaryParam, vitaminsParam, discountParam, deliveryParam, sortBy });
+
       // Category Filter
       if (categoryId) filter.categoryId = categoryId;
-      
+
       // Dietary Tags Filter
       if (dietaryParam) {
         const d = Array.isArray(dietaryParam) ? dietaryParam : String(dietaryParam || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -648,7 +659,7 @@ export async function POST(req: NextRequest) {
             }
           });
         }
-      }); 
+      });
 
       const _discountBoolPost = String(discountParam).toLowerCase() === 'true' || String(discountParam) === '1';
       const expectedDeliveryPost = !!(deliveryParam);
@@ -672,33 +683,37 @@ export async function POST(req: NextRequest) {
       const respBody = {
         status: 200,
         message: 'Products filtered successfully',
-        data:[]
-        // data: {
-        //   ...result,
-        //   pagination: {
-        //     currentPage: page,
-        //     totalPages: finalTotalPages,
-        //     totalProducts: finalCount,
-        //     limit,
-        //     hasNextPage: page < finalTotalPages,
-        //     hasPrevPage: page > 1,
-        //   },
-        //   appliedFilters,
-        // }
+        data: {
+          // ...result,
+          // pagination: {
+          //   currentPage: page,
+          //   totalPages: finalTotalPages,
+          //   totalProducts: finalCount,
+          //   limit,
+          //   hasNextPage: page < finalTotalPages,
+          //   hasPrevPage: page > 1,
+          // },
+          // appliedFilters,
+        }
       };
 
+      console.log('resBody.......................................', respBody);
       const res = NextResponse.json(respBody, { status: 200 });
+      // Cookie persistence disabled - only authToken should be sent
+      // Uncomment below if you need to persist filters in cookies
+      /*
       try {
         // If client requested reset via body.reset === true, clear cookie
         if (body && (body.reset === false || body.clearFilters === true)) {
           res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
         } else {
           const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
-          res.headers.set('Set-Cookie', cookieStr);
+          res.headers.set('Set-Cookie', );
         }
       } catch (e) {
         // ignore cookie set errors
       }
+      */
 
       return res;
     }
@@ -1378,18 +1393,18 @@ export async function POST(req: NextRequest) {
                 parsedList = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
               }
             }
-                // Normalize and validate edit delivery values against allowed static options
-                if (parsedList && parsedList.length) {
-                  const mapped: string[] = [];
-                  const invalid: string[] = [];
-                  for (const d of parsedList) {
-                    const m = mapDeliveryValue(d);
-                    if (!m) invalid.push(String(d));
-                    else mapped.push(m);
-                  }
-                  if (invalid.length) return NextResponse.json({ status: 400, message: `Invalid delivery option(s): ${invalid.join(', ')}`, data: {} }, { status: 400 });
-                  parsedList = Array.from(new Set(mapped));
-                }
+            // Normalize and validate edit delivery values against allowed static options
+            if (parsedList && parsedList.length) {
+              const mapped: string[] = [];
+              const invalid: string[] = [];
+              for (const d of parsedList) {
+                const m = mapDeliveryValue(d);
+                if (!m) invalid.push(String(d));
+                else mapped.push(m);
+              }
+              if (invalid.length) return NextResponse.json({ status: 400, message: `Invalid delivery option(s): ${invalid.join(', ')}`, data: {} }, { status: 400 });
+              parsedList = Array.from(new Set(mapped));
+            }
             product.delivery = parsedList;
           } catch (e) {
             return NextResponse.json({ status: 400, message: 'Invalid delivery value', data: {} }, { status: 400 });
@@ -1415,7 +1430,7 @@ export async function POST(req: NextRequest) {
       // Remove specific images if requested
       if (Array.isArray(data.removeImages) && data.removeImages.length) {
         const toRemove: string[] = data.removeImages.map((x: any) => String(x));
-        // filter out from product.images and delete files if local
+        // filter out from product.images and delete files if   local
         const keep: string[] = [];
         for (const img of product.images || []) {
           if (toRemove.includes(img)) {

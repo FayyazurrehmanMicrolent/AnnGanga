@@ -38,18 +38,18 @@ export default function ProductsPage() {
           throw new Error('Failed to fetch products');
         }
         const data = await response.json();
-        
+
         if (data.status === 200) {
           // Handle different response structures
           let productsData = [];
-          
+
           // If data is in the format { data: { tags: { [key: string]: { products: [...] } } } }
           if (data.data && data.data.tags) {
             // Extract all products from all tags
             productsData = Object.values(data.data.tags).flatMap(
               (tag: any) => tag.products || []
             );
-          } 
+          }
           // If data is already an array of products
           else if (Array.isArray(data.data)) {
             productsData = data.data;
@@ -58,7 +58,7 @@ export default function ProductsPage() {
           else if (data.data && Array.isArray(data.data.products)) {
             productsData = data.data.products;
           }
-          
+
           const formattedProducts = productsData.map((product: any) => ({
             id: product.productId || product._id,
             name: product.title || product.name || 'Unnamed Product',
@@ -68,12 +68,12 @@ export default function ProductsPage() {
             off: product.mrp && product.actualPrice && product.mrp > product.actualPrice
               ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
               : 0,
-            img: Array.isArray(product.images) && product.images.length > 0 
-              ? product.images[0] 
+            img: Array.isArray(product.images) && product.images.length > 0
+              ? product.images[0]
               : '/placeholder/spice.jpg',
             images: Array.isArray(product.images) ? product.images : []
           }));
-          
+
           setProducts(formattedProducts);
         } else {
           throw new Error(data.message || 'Failed to load products');
@@ -118,8 +118,8 @@ export default function ProductsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col md:flex-row gap-8">    
-        
+      <div className="flex flex-col md:flex-row gap-8">
+
         {/* Products Grid */}
         <div className="flex-1">
           <div className="flex justify-between items-center mb-6">
@@ -128,7 +128,7 @@ export default function ProductsPage() {
               {products.length} {products.length === 1 ? 'product' : 'products'} found
             </div>
           </div>
-          
+
           {products.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500">No products found. Try adjusting your filters.</p>
@@ -139,8 +139,8 @@ export default function ProductsPage() {
                 <div key={`${product.id}-${index}`} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                   <Link href={`/products/${product.id}`} className="block">
                     <div className="relative">
-                      <img 
-                        src={product.img} 
+                      <img
+                        src={product.img}
                         alt={product.name}
                         className="w-full h-48 object-cover"
                       />
@@ -156,9 +156,8 @@ export default function ProductsPage() {
                           toggleWishlist(product.id.toString());
                         }}
                         disabled={wishlistLoading}
-                        className={`absolute top-2 left-2 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-md transition-colors ${
-                          isInWishlist(product.id.toString()) ? 'text-red-500' : 'text-gray-400 hover:text-red-500'
-                        }`}
+                        className={`absolute top-2 left-2 p-2 rounded-full bg-white/90 backdrop-blur-sm shadow-md transition-colors ${isInWishlist(product.id.toString()) ? 'text-red-500' : 'text-gray-400 hover:text-red-500'
+                          }`}
                         aria-label={isInWishlist(product.id.toString()) ? 'Remove from wishlist' : 'Add to wishlist'}
                       >
                         <Heart size={18} className={isInWishlist(product.id.toString()) ? 'fill-current' : ''} />
@@ -179,7 +178,7 @@ export default function ProductsPage() {
                           </span>
                         )}
                       </div>
-                      <button 
+                      <button
                         onClick={() => addToCartHandler(product)}
                         className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200 transition-colors"
                         aria-label="Add to cart"
