@@ -76,20 +76,52 @@ export async function GET(req: NextRequest) {
 
         const subtotal = cartItemsWithDetails.reduce((sum: any, item: { total: any; }) => sum + item.total, 0);
 
-        // Include appliedCoupon details if present on the cart
-        const appliedCoupon = cart.appliedCoupon
-            ? {
-                  couponId: cart.appliedCoupon.couponId || null,
-                  code: cart.appliedCoupon.code || null,
-                  discount: cart.appliedCoupon.discount || 0,
-                  discountType: cart.appliedCoupon.discountType || null,
-                  discountValue: cart.appliedCoupon.discountValue || null,
-                  appliedToProducts: Array.isArray(cart.appliedCoupon.appliedToProducts)
-                      ? cart.appliedCoupon.appliedToProducts
-                      : [],
-                  appliedAt: cart.appliedCoupon.appliedAt || null,
-              }
-            : null;
+        // Include appliedCoupon details if present on the cart and calculate discount
+        let appliedCoupon: any = null;
+        let couponDiscount = 0;
+        let subtotalAfterDiscount = subtotal;
+
+        if (cart.appliedCoupon) {
+            const ac = cart.appliedCoupon;
+            const appliedToProducts = Array.isArray(ac.appliedToProducts) ? ac.appliedToProducts : [];
+
+            appliedCoupon = {
+                couponId: ac.couponId || null,
+                code: ac.code || null,
+                discount: ac.discount || 0,
+                discountType: ac.discountType || null,
+                discountValue: ac.discountValue || null,
+                appliedToProducts,
+                appliedAt: ac.appliedAt || null,
+            };
+
+            // If an absolute discount was already stored, prefer that
+            if (typeof ac.discount === 'number' && ac.discount > 0) {
+                couponDiscount = Number(ac.discount);
+            } else {
+                // compute applicable total (either whole cart or only specific products)
+                let applicableTotal = subtotal;
+                if (appliedToProducts.length > 0) {
+                    applicableTotal = cartItemsWithDetails.reduce((s: number, it: any) => {
+                        return s + (appliedToProducts.includes(it.productId) ? it.total : 0);
+                    }, 0);
+                }
+
+                if (ac.discountType === 'percentage' && ac.discountValue) {
+                    const pct = Number(ac.discountValue) || 0;
+                    couponDiscount = Math.round((applicableTotal * pct) / 100);
+                } else if (ac.discountType === 'fixed' && ac.discountValue) {
+                    couponDiscount = Number(ac.discountValue) || 0;
+                } else {
+                    couponDiscount = 0;
+                }
+            }
+
+            // Ensure discount doesn't exceed applicable total
+            if (couponDiscount > subtotal) couponDiscount = subtotal;
+
+            subtotalAfterDiscount = Math.max(0, subtotal - couponDiscount);
+        }
 
         return NextResponse.json(
             {
@@ -99,7 +131,9 @@ export async function GET(req: NextRequest) {
                     cartId: cart.cartId,
                     items: cartItemsWithDetails,
                     itemCount: cart.items.length,
-                    subtotal,
+                    subtotal: subtotal, // original subtotal before coupon
+                    couponDiscount,
+                    subtotalAfterDiscount,
                     appliedCoupon,
                 },
             },

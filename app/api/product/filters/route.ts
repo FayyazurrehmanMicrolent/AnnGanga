@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
+
 // POST: create or update a filter for the authenticated user
 export async function POST(req: NextRequest) {
   try {

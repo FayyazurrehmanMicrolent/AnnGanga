@@ -410,22 +410,19 @@ export async function GET(req: any) {
 
 
       const res = NextResponse.json(respBody, { status: 200 });
-      // Cookie persistence disabled - only authToken should be sent
-      // Uncomment below if you need to persist filters in cookies
-      /*
+      // Persist filters in cookie so /api/product/current-filters can read them
       try {
         if (clearCookie) {
           // Clear the cookie
-          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
+          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure');
         } else {
-          // Persist filters in cookie for subsequent requests (7 days)
-          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+          // Persist filters in cookie for subsequent requests (7 days). Use SameSite=None; Secure for cross-site/ngrok.
+          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=None; Secure`;
           res.headers.set('Set-Cookie', cookieStr);
         }
       } catch (e) {
         // ignore cookie set errors
       }
-      */
 
       return res;
     }
@@ -699,21 +696,18 @@ export async function POST(req: NextRequest) {
 
       console.log('resBody.......................................', respBody);
       const res = NextResponse.json(respBody, { status: 200 });
-      // Cookie persistence disabled - only authToken should be sent
-      // Uncomment below if you need to persist filters in cookies
-      /*
+      // Persist filters in cookie so /api/product/current-filters can read them
       try {
         // If client requested reset via body.reset === true, clear cookie
         if (body && (body.reset === false || body.clearFilters === true)) {
-          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax');
+          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure');
         } else {
-          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax`;
-          res.headers.set('Set-Cookie', );
+          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=None; Secure`;
+          res.headers.set('Set-Cookie', cookieStr);
         }
       } catch (e) {
         // ignore cookie set errors
       }
-      */
 
       return res;
     }
