@@ -148,13 +148,6 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            if (!state || !String(state).trim()) {
-                return NextResponse.json(
-                    { status: 400, message: 'State is required', data: {} },
-                    { status: 400 }
-                );
-            }
-
             if (!pincode || !/^\d{6}$/.test(String(pincode))) {
                 return NextResponse.json(
                     { status: 400, message: 'Valid 6-digit pincode is required', data: {} },
