@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
         const cart = await Cart.findOne({ userId });
         if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
             return NextResponse.json(
-                {
+            {
                     status: 200,
                     message: 'Order summary fetched successfully',
                     data: {

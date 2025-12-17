@@ -355,6 +355,78 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // SELECT / UNSELECT COUPON FOR USER CART (does NOT delete coupon from DB)
+        if (action === 'select' || action === 'unselect') {
+            const userId = data.userId || url.searchParams.get('userId');
+            const id = data.id || data.couponId;
+            const code = data.code || null;
+
+            if (!userId) {
+                return NextResponse.json(
+                    { status: 400, message: 'User ID is required', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            // For unselect, we just clear appliedCoupon on cart
+            if (action === 'unselect') {
+                const cart = await Cart.findOne({ userId });
+                if (!cart || !cart.appliedCoupon) {
+                    return NextResponse.json({ status: 200, message: 'No coupon applied', data: {} }, { status: 200 });
+                }
+                cart.appliedCoupon = null;
+                await cart.save();
+                return NextResponse.json({ status: 200, message: 'Coupon removed from cart', data: {} }, { status: 200 });
+            }
+
+            // SELECT action
+            if (!id && !code) {
+                return NextResponse.json(
+                    { status: 400, message: 'Coupon id or code is required to select', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            let coupon = null;
+            if (id) coupon = await findCouponByIdSafe(String(id));
+            if (!coupon && code) {
+                const up = String(code).trim().toUpperCase();
+                coupon = await Coupon.findOne({ code: up, isDeleted: false });
+            }
+
+            if (!coupon || coupon.isDeleted) {
+                return NextResponse.json({ status: 404, message: 'Coupon not found', data: {} }, { status: 404 });
+            }
+
+            if (!coupon.isActive) {
+                return NextResponse.json({ status: 400, message: 'Coupon is not active', data: {} }, { status: 400 });
+            }
+
+            if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
+                return NextResponse.json({ status: 400, message: 'Coupon is expired', data: {} }, { status: 400 });
+            }
+
+            // Find or create cart for user
+            let cart = await Cart.findOne({ userId });
+            if (!cart) {
+                cart = new Cart({ userId, items: [], appliedCoupon: null });
+            }
+
+            cart.appliedCoupon = {
+                couponId: coupon.couponId || null,
+                code: coupon.code || null,
+                discount: 0,
+                discountType: coupon.discountType || null,
+                discountValue: coupon.discountValue || null,
+                appliedToProducts: [],
+                appliedAt: new Date(),
+            };
+
+            await cart.save();
+
+            return NextResponse.json({ status: 200, message: 'Coupon selected for cart', data: cart.appliedCoupon }, { status: 200 });
+        }
+
         return NextResponse.json(
             { status: 400, message: 'Invalid action', data: {} },
             { status: 400 }

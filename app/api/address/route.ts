@@ -22,10 +22,32 @@ export async function GET(req: NextRequest) {
         const url = new URL(req.url);
         const userId = url.searchParams.get('userId');
 
+        // If client requests only the default address
+        const onlyDefault = (url.searchParams.get('default') || url.searchParams.get('isDefault')) === 'true';
+
         if (!userId) {
             return NextResponse.json(
                 { status: 400, message: 'User ID is required', data: {} },
                 { status: 400 }
+            );
+        }
+
+        if (onlyDefault) {
+            const address = await Address.findOne({ userId, isDeleted: false, isDefault: true }).lean();
+            if (!address) {
+                return NextResponse.json(
+                    { status: 404, message: 'Default address not found', data: {} },
+                    { status: 404 }
+                );
+            }
+
+            return NextResponse.json(
+                {
+                    status: 200,
+                    message: 'Default address fetched successfully',
+                    data: address,
+                },
+                { status: 200 }
             );
         }
 
@@ -71,7 +93,7 @@ export async function POST(req: NextRequest) {
             const id = data.id || data.addressId;
             if (!id) {
                 return NextResponse.json(
-                    { status: 400, message: 'Address ID is required', data: {} },
+                    { status: 400, message: ' ID is Addressrequired', data: {} },
                     { status: 400 }
                 );
             }
@@ -343,9 +365,18 @@ export async function POST(req: NextRequest) {
         // DELETE ADDRESS
         if (action === 'delete') {
             const id = data.id || data.addressId;
+            const userId = data.userId || url.searchParams.get('userId');
+
             if (!id) {
                 return NextResponse.json(
                     { status: 400, message: 'Address ID is required for delete', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            if (!userId) {
+                return NextResponse.json(
+                    { status: 400, message: 'User ID is required', data: {} },
                     { status: 400 }
                 );
             }
@@ -358,8 +389,16 @@ export async function POST(req: NextRequest) {
                 );
             }
 
+            if (String(address.userId) !== String(userId)) {
+                return NextResponse.json(
+                    { status: 403, message: 'Not authorized to delete this address', data: {} },
+                    { status: 403 }
+                );
+            }
+
             address.isDeleted = true;
             address.isDefault = false; // Remove default flag when deleting
+            address.isPrimary = false;
             await address.save();
 
             return NextResponse.json(
@@ -372,12 +411,22 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // SET DEFAULT ADDRESS
+        // SET/UNSET DEFAULT ADDRESS (requires userId and optional isDefault boolean)
         if (action === 'setdefault') {
             const id = data.id || data.addressId;
+            const userId = data.userId || url.searchParams.get('userId');
+            const setTo = typeof data.isDefault === 'undefined' ? true : Boolean(data.isDefault);
+
             if (!id) {
                 return NextResponse.json(
                     { status: 400, message: 'Address ID is required', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            if (!userId) {
+                return NextResponse.json(
+                    { status: 400, message: 'User ID is required', data: {} },
                     { status: 400 }
                 );
             }
@@ -390,19 +439,30 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            // Unset other defaults for this user
-            await Address.updateMany(
-                { userId: address.userId, isDeleted: false },
-                { isDefault: false }
-            );
+            if (String(address.userId) !== String(userId)) {
+                return NextResponse.json(
+                    { status: 403, message: 'Not authorized to change default for this address', data: {} },
+                    { status: 403 }
+                );
+            }
 
-            address.isDefault = true;
+            if (setTo) {
+                // Unset other defaults for this user
+                await Address.updateMany(
+                    { userId: address.userId, isDeleted: false, _id: { $ne: address._id } },
+                    { isDefault: false }
+                );
+                address.isDefault = true;
+            } else {
+                address.isDefault = false;
+            }
+
             await address.save();
 
             return NextResponse.json(
                 {
                     status: 200,
-                    message: 'Default address set successfully',
+                    message: setTo ? 'Default address set successfully' : 'Default address unset successfully',
                     data: address,
                 },
                 { status: 200 }
@@ -419,6 +479,86 @@ export async function POST(req: NextRequest) {
             {
                 status: 500,
                 message: error.message || 'Failed to process address action',
+                data: {},
+            },
+            { status: 500 }
+        );
+    }
+}
+
+export async function DELETE(req: NextRequest) {
+    try {
+        await connectDB();
+
+        const url = new URL(req.url);
+        // Prefer query param; fall back to JSON body if provided
+        let id = url.searchParams.get('id') || url.searchParams.get('addressId');
+
+        if (!id) {
+            try {
+                const body = await req.json();
+                id = body?.id || body?.addressId || null;
+            } catch {
+                // ignore JSON parse errors for DELETE with no body
+            }
+        }
+
+        if (!id) {
+            return NextResponse.json(
+                { status: 400, message: 'Address ID is required for delete', data: {} },
+                { status: 400 }
+            );
+        }
+
+        // require userId for authorization
+        let userId = url.searchParams.get('userId');
+        if (!userId) {
+            try {
+                const body = await req.json();
+                userId = body?.userId || null;
+            } catch {
+                // ignore
+            }
+        }
+
+        if (!userId) {
+            return NextResponse.json(
+                { status: 400, message: 'User ID is required', data: {} },
+                { status: 400 }
+            );
+        }
+
+        const address = await findAddressByIdSafe(String(id));
+        if (!address) {
+            return NextResponse.json(
+                { status: 404, message: 'Address not found', data: {} },
+                { status: 404 }
+            );
+        }
+
+        if (String(address.userId) !== String(userId)) {
+            return NextResponse.json(
+                { status: 403, message: 'Not authorized to delete this address', data: {} },
+                { status: 403 }
+            );
+        }
+
+        // Soft delete
+        address.isDeleted = true;
+        address.isDefault = false;
+        address.isPrimary = false;
+        await address.save();
+
+        return NextResponse.json(
+            { status: 200, message: 'Address deleted successfully', data: {} },
+            { status: 200 }
+        );
+    } catch (error: any) {
+        console.error('DELETE /api/address error:', error);
+        return NextResponse.json(
+            {
+                status: 500,
+                message: error.message || 'Failed to delete address',
                 data: {},
             },
             { status: 500 }

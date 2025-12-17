@@ -85,18 +85,20 @@ export async function GET(req: any) {
     let clearCookie = false;
     try {
       const resetParam = url.searchParams.get('reset') || url.searchParams.get('clearFilters');
-      if (resetParam === 'false') {
-        // User requested reset via query param; clear stored filters
+      if (resetParam === 'true' || resetParam === '1') {
+        // User requested reset via query param; clear stored filters and return all products
         clearCookie = true;
+        console.log('GET /api/product - reset requested, clearing filters');
       } else {
-        // const c = (req as any).cookies?.get && (req as any).cookies.get('productFilters');
-        // if (c && c.value) {
-        //   try {
-        //     cookieFilters = JSON.parse(decodeURIComponent(c.value));
-        //   } catch (e) {
-        //     cookieFilters = null;
-        //   }
-        // }
+        const c = (req as any).cookies?.get && (req as any).cookies.get('productFilters');
+        if (c && c.value) {
+          try {
+            cookieFilters = JSON.parse(decodeURIComponent(c.value));
+            console.log('GET /api/product - loaded filters from cookie:', cookieFilters);
+          } catch (e) {
+            cookieFilters = null;
+          }
+        }
       }
     } catch (e) {
       cookieFilters = null;
@@ -140,8 +142,9 @@ export async function GET(req: any) {
     if (categoryId) filter.categoryId = categoryId;
 
     // If no explicit filters provided in URL but cookieFilters exist, merge them
+    // Skip merging if clearCookie is true (reset was requested)
     const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
-    if (!preFilterHasFilters && cookieFilters) {
+    if (!preFilterHasFilters && cookieFilters && !clearCookie) {
       // apply only fields that aren't present in the URL
       if (!minPrice && cookieFilters.minPrice !== undefined && cookieFilters.minPrice !== null) minPrice = String(cookieFilters.minPrice);
       if (!maxPrice && cookieFilters.maxPrice !== undefined && cookieFilters.maxPrice !== null) maxPrice = String(cookieFilters.maxPrice);
@@ -387,52 +390,44 @@ export async function GET(req: any) {
 
     // console.log("filterr..........................", appliedFilters);
 
-    // Return response with tags structure and additional filter info if filters applied
-    if (hasFilters || cookieFilters || clearCookie) {
-      const respBody = {
-        status: 200,
-        message: 'Products filtered successfully',
-        data: {
-          ...result,
-          pagination: {
-            currentPage: page,
-            totalPages: finalTotalPages,
-            totalProducts: finalCount,
-            limit,
-            hasNextPage: page < finalTotalPages,
-            hasPrevPage: page > 1,
-          },
-          appliedFilters,   
-        }
-      };
-
-      console.log("resBody........................................", respBody)
-
-
-      const res = NextResponse.json(respBody, { status: 200 });
-      // Persist filters in cookie so /api/product/current-filters can read them
-      try {
-        if (clearCookie) {
-          // Clear the cookie
-          res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure');
-        } else {
-          // Persist filters in cookie for subsequent requests (7 days). Use SameSite=None; Secure for cross-site/ngrok.
-          const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=None; Secure`;
-          res.headers.set('Set-Cookie', cookieStr);
-        }
-      } catch (e) {
-        // ignore cookie set errors
+    // Always return response with tags structure, pagination and appliedFilters
+    const messageText = hasFilters ? 'Products filtered successfully' : 'Products fetched and grouped by tags';
+    const respBody = {
+      status: 200,
+      message: messageText,
+      data: {
+        ...result,
+        pagination: {
+          currentPage: page,
+          totalPages: finalTotalPages,
+          totalProducts: finalCount,
+          limit,
+          hasNextPage: page < finalTotalPages,
+          hasPrevPage: page > 1,
+        },
+        appliedFilters,   
       }
+    };
 
-      return res;
+    console.log("resBody........................................", respBody)
+
+    const res = NextResponse.json(respBody, { status: 200 });
+    
+    // Persist filters in cookie so /api/product/current-filters can read them
+    try {
+      if (clearCookie) {
+        // Clear the cookie
+        res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure');
+      } else if (hasFilters || cookieFilters) {
+        // Persist filters in cookie for subsequent requests (7 days). Use SameSite=None; Secure for cross-site/ngrok.
+        const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=None; Secure`;
+        res.headers.set('Set-Cookie', cookieStr);
+      }
+    } catch (e) {
+      // ignore cookie set errors
     }
 
-    // If no filters, return grouped by tags only (original behavior)
-    return NextResponse.json({
-      status: 200,
-      message: 'Products feched and grouped by tags',
-      data: { ...result }
-    }, { status: 200 });
+    return res;
   } catch (error: any) {
     console.error('GET /api/product error', error);
     return NextResponse.json({ status: 500, message: error.message || 'Failed to fetch products', data: {} }, { status: 500 });
@@ -474,21 +469,59 @@ export async function POST(req: NextRequest) {
       // ignore
     }
 
+    // Auto-detect filter action by checking if body contains filter parameters
+    let bodyData: any = null;
+    try {
+      const clonedReq = req.clone();
+      bodyData = await clonedReq.json();
+      
+      // Check if body has filter-related fields (but not create/edit fields like title, images, etc.)
+      const hasFilterFields = !!(
+        bodyData.minPrice || 
+        bodyData.maxPrice || 
+        bodyData.rating || 
+        bodyData.categoryId || 
+        bodyData.dietary || 
+        bodyData.vitamins || 
+        bodyData.discount !== undefined || 
+        bodyData.delivery || 
+        bodyData.sortBy ||
+        bodyData.page ||
+        bodyData.limit
+      );
+      
+      const hasProductFields = !!(bodyData.title || bodyData.name || bodyData.images || bodyData.data);
+      
+      // If has filter fields but no product creation fields, treat as filter
+      if (hasFilterFields && !hasProductFields && action === 'create') {
+        action = 'filter';
+      }
+    } catch (e) {
+      bodyData = null;
+    }
+
     // Handle filter action with body payload
     if (action === 'filter') {
-      const body = await req.json();
-      console.log('POST /api/product?action=filter - body:', JSON.stringify(body));
+      let body = bodyData;
+      if (!body) {
+        try {
+          body = await req.json();
+        } catch (e) {
+          body = {};
+        }
+      }
+      console.log('POST /api/product (filter detected) - body:', JSON.stringify(body));
 
       // Pagination parameters
-      const page = Math.max(1, parseInt(body.page || '1'));
-      const limit = Math.min(100, Math.max(1, parseInt(body.limit || '20')));
+      const page = Math.max(1, parseInt(String(body.page || '1')));
+      const limit = Math.min(100, Math.max(1, parseInt(String(body.limit || '20'))));
       const skip = (page - 1) * limit;
 
       // Filter parameters from body
-      const minPrice = body.minPrice;
-      const maxPrice = body.maxPrice;
-      const rating = body.rating;
-      const categoryId = body.categoryId;
+      const minPrice = body.minPrice ? String(body.minPrice) : undefined;
+      const maxPrice = body.maxPrice ? String(body.maxPrice) : undefined;
+      const rating = body.rating ? String(body.rating) : undefined;
+      const categoryId = body.categoryId ? String(body.categoryId) : undefined;
       const dietaryParam = body.dietary;
       const vitaminsParam = body.vitamins;
       const discountParam = body.discount;
