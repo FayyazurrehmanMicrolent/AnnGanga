@@ -46,6 +46,19 @@ export async function GET(req: NextRequest) {
             filter.isPublished = true;
         }
 
+        // Support search via query param (search or q) matching title, content, excerpt, tags
+        const searchParam = url.searchParams.get('search') || url.searchParams.get('q');
+        if (searchParam && String(searchParam).trim()) {
+            const q = String(searchParam).trim();
+            const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            filter.$or = [
+                { title: regex },
+                { content: regex },
+                { excerpt: regex },
+                { tags: { $in: [regex] } }
+            ];
+        }
+
         const blogs = await Blog.find(filter).sort({ createdAt: -1 }).lean();
         return NextResponse.json(
             { status: 200, message: 'Blogs fetched', data: blogs },
@@ -143,6 +156,19 @@ export async function POST(req: NextRequest) {
                         if (saved) imagesPaths.push(saved);
                     }
                 }
+            }
+        } else {
+            // Fallback: some clients may omit Content-Type. Try to parse body as JSON so callers can POST { action:'list', ... }
+            try {
+                const body = await req.json();
+                if (body && typeof body === 'object') {
+                    action = (body.action || action).toLowerCase();
+                    parsedData = body.data || body;
+                    id = body.id || body.blogId || id;
+                    if (Array.isArray(body.images)) imagesPaths = body.images;
+                }
+            } catch (e) {
+                // ignore parse errors and keep defaults
             }
         }
 
@@ -248,6 +274,59 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 { status: 201, message: 'Blog created', data: blog },
                 { status: 201 }
+            );
+        }
+
+        // Allow listing via POST with JSON body: { action: 'list', page, limit, search, tags }
+        if (action === 'list' || action === 'fetch' || action === 'search') {
+            const page = Math.max(1, Number(data.page) || 1);
+            const limit = Math.min(100, Math.max(1, Number(data.limit) || 20));
+
+            const filter: any = { isDeleted: false };
+            const searchParam = data.search || data.q || data.query;
+            if (searchParam && String(searchParam).trim()) {
+                const q = String(searchParam).trim();
+                const regex = new RegExp(q.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&'), 'i');
+                filter.$or = [
+                    { title: regex },
+                    { content: regex },
+                    { tags: { $in: [regex] } }
+                ];
+            }
+
+            // allow exact tag filters as array
+            if (Array.isArray(data.tags) && data.tags.length) {
+                filter.tags = { $in: data.tags };
+            }
+
+            // published filter override (body can include published=true)
+            if (typeof data.published !== 'undefined') {
+                if (data.published === true || String(data.published) === 'true') filter.isPublished = true;
+                else if (data.published === false || String(data.published) === 'false') filter.isPublished = false;
+            }
+
+            const total = await Blog.countDocuments(filter);
+            const totalPages = Math.ceil(total / limit) || 1;
+
+            const items: any[] = await Blog.find(filter)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean();
+
+            return NextResponse.json(
+                {
+                    status: 200,
+                    message: 'Blogs fetched',
+                    data: {
+                        items,
+                        total,
+                        page,
+                        limit,
+                        totalPages
+                    }
+                },
+                { status: 200 }
             );
         }
 
