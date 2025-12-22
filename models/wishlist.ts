@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 interface IWishlistItem {
-  productId: string;
+  productId?: string;
+  recipeId?: string;
   addedAt: Date;
 }
 
@@ -16,7 +17,13 @@ const wishlistItemSchema = new Schema<IWishlistItem>(
   {
     productId: {
       type: String,
-      required: true,
+      required: false,
+      default: null,
+    },
+    recipeId: {
+      type: String,
+      required: false,
+      default: null,
     },
     addedAt: {
       type: Date,
@@ -44,5 +51,6 @@ const wishlistSchema = new Schema<IWishlist>(
 // Index for efficient querying
 wishlistSchema.index({ userId: 1 });
 wishlistSchema.index({ 'items.productId': 1 });
+wishlistSchema.index({ 'items.recipeId': 1 });
 
 export default mongoose.models.Wishlist || mongoose.model<IWishlist>('Wishlist', wishlistSchema);

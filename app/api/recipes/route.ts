@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Recipe from '@/models/recipe';
+import { verifyToken } from '@/lib/auth';
+import Wishlist from '@/models/wishlist';
 import { saveUpload } from '@/lib/upload';
 
 // Helper: find recipe safely by recipeId (uuid) or by Mongo _id
@@ -34,13 +36,72 @@ export async function GET(req: NextRequest) {
                     { status: 404 }
                 );
             }
+
+                // Ensure `isLike` is always present (defaults to false if not set in DB)
+                const out = typeof recipe.toObject === 'function' ? recipe.toObject() : recipe;
+                out.isLike = out.isLike ?? false;
+
+                // If user is authenticated, compute per-user isLike from wishlist
+                try {
+                    // extract token from Authorization header or cookie
+                    const authHeader = req.headers.get('authorization');
+                    let token: string | undefined;
+                    if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+                    if (!token) token = req.cookies.get('authToken')?.value || undefined;
+                    if (token) {
+                        const decoded: any = verifyToken(token);
+                        const userId = decoded?.userId;
+                        console.log('[recipes GET single] token present -> userId:', userId);
+                        if (userId) {
+                            const wishlist: any = await Wishlist.findOne({ userId }).lean();
+                            const recipeIds = (wishlist?.items || []).map((it: any) => String(it.recipeId));
+                            console.log('[recipes GET single] user wishlist recipeIds:', recipeIds);
+                            const recipeSet = new Set(recipeIds);
+                            out.isLike = recipeSet.has(String(out._id));
+                        }
+                    } else {
+                        console.log('[recipes GET single] no token found');
+                    }
+                } catch (e) {
+                    // ignore wishlist lookup errors and leave isLike as default
+                    console.warn('Could not compute per-user isLike:', e);
+                }
+
             return NextResponse.json(
-                { status: 200, message: 'Recipe fetched', data: recipe },
+                { status: 200, message: 'Recipe fetched', data: out },
                 { status: 200 }
             );
         }
 
-        const recipes = await Recipe.find({ isDeleted: false }).sort({ createdAt: -1 }).lean();
+        let recipes: any[] = await Recipe.find({ isDeleted: false }).sort({ createdAt: -1 }).lean();
+
+        // Try to compute per-user isLike flags when auth token present
+        try {
+            const authHeader = req.headers.get('authorization');
+            let token: string | undefined;
+            if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+            if (!token) token = req.cookies.get('authToken')?.value || undefined;
+            if (token) {
+                const decoded: any = verifyToken(token);
+                const userId = decoded?.userId;
+                console.log('[recipes GET list] token present -> userId:', userId);
+                if (userId) {
+                    const wishlist: any = await Wishlist.findOne({ userId }).lean();
+                    const recipeIds = (wishlist?.items || []).map((it: any) => String(it.recipeId));
+                    console.log('[recipes GET list] user wishlist recipeIds:', recipeIds);
+                    const recipeSet = new Set(recipeIds);
+                    recipes = recipes.map((r: any) => ({ ...r, isLike: recipeSet.has(String(r._id)) }));
+                } else {
+                    recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+                }
+            } else {
+                console.log('[recipes GET list] no token found');
+                recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+            }
+        } catch (e) {
+            console.warn('Could not compute per-user isLike for list:', e);
+            recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+        }
         return NextResponse.json(
             { status: 200, message: 'Recipes fetched', data: recipes },
             { status: 200 }
@@ -141,6 +202,72 @@ export async function POST(req: NextRequest) {
         }
 
         const data = parsedData || {};
+
+        // Handle per-user like/unlike actions (sync with wishlist)
+        const likeActions = ['setlike', 'togglelike', 'toggle-like', 'like', 'unlike'];
+        // allow implicit like/unlike when body contains recipeId + isLike (even if action is 'create')
+        const bodyHasLike = typeof data.recipeId !== 'undefined' && typeof data.isLike === 'boolean';
+        if (likeActions.includes(action) || bodyHasLike) {
+            // Need authenticated user
+            const authHeader = req.headers.get('authorization');
+            let token: string | undefined;
+            if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+            if (!token) token = req.cookies.get('authToken')?.value || undefined;
+            if (!token) {
+                return NextResponse.json({ status: 401, message: 'Unauthorized. Please log in.', data: {} }, { status: 401 });
+            }
+
+            const decoded: any = verifyToken(token);
+            const userId = decoded?.userId;
+            if (!userId) {
+                return NextResponse.json({ status: 401, message: 'Invalid token', data: {} }, { status: 401 });
+            }
+
+            const recipeIdParam = id || data.recipeId || data.id;
+            if (!recipeIdParam) {
+                return NextResponse.json({ status: 400, message: 'Recipe id is required', data: {} }, { status: 400 });
+            }
+
+            const recipe = await findRecipeByIdSafe(String(recipeIdParam));
+            if (!recipe) {
+                return NextResponse.json({ status: 404, message: 'Recipe not found', data: {} }, { status: 404 });
+            }
+
+            let wishlist = await Wishlist.findOne({ userId });
+            if (!wishlist) wishlist = new Wishlist({ userId, items: [] });
+
+            const recipeIdToStore = recipe._id.toString();
+
+            // Decide desired state. If caller provided explicit boolean (`isLike`) use it.
+            let desired: boolean | null = null;
+            if (typeof data.isLike === 'boolean') desired = data.isLike;
+            else if (action === 'like') desired = true;
+            else if (action === 'unlike') desired = false;
+
+            // If toggle requested and desired not set, invert
+            if (desired === null && (action === 'togglelike' || action === 'toggle-like')) {
+                const exists = wishlist.items.some((it: any) => String(it.recipeId) === recipeIdToStore);
+                desired = !exists;
+            }
+
+            // If bodyHasLike is true (explicit isLike provided), it takes precedence and already set above.
+            // Fallback: if still null, treat as like
+            if (desired === null) desired = true;
+
+            if (desired) {
+                const exists = wishlist.items.some((it: any) => String(it.recipeId) === recipeIdToStore);
+                if (!exists) {
+                    wishlist.items.push({ recipeId: recipeIdToStore, addedAt: new Date() });
+                    await wishlist.save();
+                }
+                return NextResponse.json({ status: 200, message: 'Recipe added to wishlist', data: { recipeId: recipeIdToStore, isLike: true } }, { status: 200 });
+            } else {
+                const initialLength = wishlist.items.length;
+                wishlist.items = wishlist.items.filter((it: any) => String(it.recipeId) !== recipeIdToStore);
+                if (wishlist.items.length !== initialLength) await wishlist.save();
+                return NextResponse.json({ status: 200, message: 'Recipe removed from wishlist', data: { recipeId: recipeIdToStore, isLike: false } }, { status: 200 });
+            }
+        }
 
         if (action === 'create') {
             const { title, description, ingredients, instructions, prepTime, cookTime, servings, tags, productLinks } = data;

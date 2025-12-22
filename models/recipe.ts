@@ -14,6 +14,7 @@ interface IProductLink {
 interface IRecipe extends Document {
         recipeId: string;
         title: string;
+    isLike?: boolean;
         description?: string;
         images: string[];
         ingredients: string[];
@@ -92,6 +93,10 @@ const recipeSchema = new Schema<IRecipe>(
         tags: {
             type: [String],
             default: [],
+        },
+        isLike: {
+            type: Boolean,
+            default: false,
         },
         isDeleted: {
             type: Boolean,

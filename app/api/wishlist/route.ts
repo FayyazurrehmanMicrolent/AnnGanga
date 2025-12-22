@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import Wishlist from '@/models/wishlist';
 import Product from '@/models/product';
+import Recipe from '@/models/recipe';
 
 // Helper function to extract userId from token
 async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
@@ -78,45 +79,58 @@ async function handleGetWishlist(req: NextRequest) {
             );
         }
 
-        // Get all product IDs from the wishlist
-        const productIds = wishlist.items.map((item: any) => item.productId);
-        
-        // Find all products that match the productIds (using _id)
-        const products = await Product.find({
-            _id: { $in: productIds },
-            isDeleted: false
-        }).select('_id title mrp actualPrice images categoryId productId');
+        // Build lists of product and recipe ids from wishlist
+        const productIds = wishlist.items.map((item: any) => item.productId).filter(Boolean);
+        const recipeIds = wishlist.items.map((item: any) => item.recipeId).filter(Boolean);
 
-        // Create a map of products by _id for quick lookup
+        // Fetch products and recipes
+        const [products, recipes] = await Promise.all([
+            Product.find({ _id: { $in: productIds }, isDeleted: false }).select('_id title mrp actualPrice images categoryId productId'),
+            Recipe.find({ _id: { $in: recipeIds }, isDeleted: false }).select('_id title images recipeId')
+        ]);
+
         const productMap = new Map();
         products.forEach((product: any) => {
-            if (product._id) {
-                productMap.set(product._id.toString(), product);
-            }
+            if (product._id) productMap.set(product._id.toString(), product);
         });
 
-        // Create the populated wishlist items
+        const recipeMap = new Map();
+        recipes.forEach((recipe: any) => {
+            if (recipe._id) recipeMap.set(recipe._id.toString(), recipe);
+        });
+
+        // Create populated wishlist items supporting both products and recipes
         const populatedItems = wishlist.items.map((item: any) => {
-            const itemId = item.productId?.toString();
-            if (!itemId) return null;
-            
-            // Find the product by _id
-            const product = productMap.get(itemId);
-            if (!product) {
-                console.warn(`Product not found for ID: ${itemId}`);
-                return null;
+            if (item.productId) {
+                const id = item.productId.toString();
+                const product = productMap.get(id);
+                if (!product) return null;
+                return {
+                    type: 'product',
+                    productId: product._id.toString(),
+                    title: product.title,
+                    mrp: product.mrp,
+                    actualPrice: product.actualPrice,
+                    images: product.images,
+                    categoryId: product.categoryId,
+                    addedAt: item.addedAt || new Date()
+                };
             }
 
-            // Always return the _id as productId for frontend consistency
-            return {
-                productId: product._id.toString(),
-                title: product.title,
-                mrp: product.mrp,
-                actualPrice: product.actualPrice,
-                images: product.images,
-                categoryId: product.categoryId,
-                addedAt: item.addedAt || new Date()
-            };
+            if (item.recipeId) {
+                const id = item.recipeId.toString();
+                const recipe = recipeMap.get(id);
+                if (!recipe) return null;
+                return {
+                    type: 'recipe',
+                    recipeId: recipe._id.toString(),
+                    title: recipe.title,
+                    images: recipe.images,
+                    addedAt: item.addedAt || new Date()
+                };
+            }
+
+            return null;
         }).filter(Boolean);
 
         if (populatedItems.length === 0) {
@@ -126,22 +140,12 @@ async function handleGetWishlist(req: NextRequest) {
             );
         }
 
-        const wishlistItems = populatedItems.map((item: any) => ({
-            productId: item.productId,
-            title: item.title,
-            mrp: item.mrp,
-            actualPrice: item.actualPrice,
-            images: item.images,
-            categoryId: item.categoryId,
-            addedAt: item.addedAt
-        }));
-
         return NextResponse.json({
             status: 200,
             message: 'Wishlist fetched successfully',
             data: {
-                items: wishlistItems,
-                count: wishlistItems.length,
+                items: populatedItems,
+                count: populatedItems.length,
             },
         });
     } catch (error) {
@@ -168,57 +172,14 @@ async function handleAddToWishlist(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { productId } = body;
+        const { productId, recipeId } = body;
 
-        if (!productId) {
+        if (!productId && !recipeId) {
             return NextResponse.json(
-                { status: 400, message: 'Product ID is required', data: {} },
+                { status: 400, message: 'productId or recipeId is required', data: {} },
                 { status: 400 }
             );
         }
-
-        // Verify product exists and is not deleted
-        console.log('Looking for product with ID:', productId);
-        
-        // Try to find by _id (MongoDB ObjectId) first, then by productId (UUID)
-        let product = await Product.findOne({ 
-            _id: productId,
-            isDeleted: false 
-        });
-        
-        // If not found, try finding by productId (UUID)
-        if (!product) {
-            product = await Product.findOne({ 
-                productId: productId,
-                isDeleted: false 
-            });
-        }
-        
-        if (!product) {
-            console.error('Product not found with ID:', productId);
-            // List some available products for debugging
-            const sampleProducts = await Product.find({ isDeleted: false }).limit(3).select('_id productId title');
-            console.log('Sample available products:', sampleProducts);
-            
-            return NextResponse.json(
-                { 
-                    status: 404, 
-                    message: 'Product not found. Please check the product ID.',
-                    data: { 
-                        requestedId: productId,
-                        sampleProductIds: sampleProducts.map(p => ({
-                            _id: p._id,
-                            productId: p.productId,
-                            title: p.title
-                        }))
-                    } 
-                },
-                { status: 404 }
-            );
-        }
-
-        // Store the _id in wishlist for consistency
-        const productIdToStore = product._id.toString();
 
         // Find or create wishlist
         let wishlist = await Wishlist.findOne({ userId });
@@ -226,34 +187,38 @@ async function handleAddToWishlist(req: NextRequest) {
             wishlist = new Wishlist({ userId, items: [] });
         }
 
-        // Check if product already in wishlist using _id
-        const existingItemIndex = wishlist.items.findIndex(
-            (item: { productId: string }) => item.productId.toString() === productIdToStore
-        );
-
-        if (existingItemIndex > -1) {
-            return NextResponse.json(
-                { status: 400, message: 'Product already in wishlist', data: {} },
-                { status: 400 }
-            );
+        // Handle product add
+        if (productId) {
+            // Verify product exists
+            let product = await Product.findOne({ _id: productId, isDeleted: false });
+            if (!product) product = await Product.findOne({ productId: productId, isDeleted: false });
+            if (!product) {
+                return NextResponse.json({ status: 404, message: 'Product not found', data: {} }, { status: 404 });
+            }
+            const productIdToStore = product._id.toString();
+            const exists = wishlist.items.find((it: any) => it.productId && it.productId.toString() === productIdToStore);
+            if (exists) return NextResponse.json({ status: 400, message: 'Product already in wishlist', data: {} }, { status: 400 });
+            wishlist.items.push({ productId: productIdToStore, addedAt: new Date() });
+            await wishlist.save();
+            console.log('[wishlist] add product -> userId:', userId, 'productId:', productIdToStore, 'itemsCount:', wishlist.items.length);
+            return NextResponse.json({ status: 201, message: 'Product added to wishlist', data: { productId: productIdToStore, count: wishlist.items.length } }, { status: 201 });
         }
 
-        // Add to wishlist using _id
-        wishlist.items.push({
-            productId: productIdToStore,
-            addedAt: new Date(),
-        });
-
-        await wishlist.save();
-
-        return NextResponse.json({
-            status: 201,
-            message: 'Product added to wishlist',
-            data: {
-                productId: productIdToStore,
-                count: wishlist.items.length,
-            },
-        });
+        // Handle recipe add
+        if (recipeId) {
+            let recipe = await Recipe.findOne({ _id: recipeId, isDeleted: false });
+            if (!recipe) recipe = await Recipe.findOne({ recipeId: recipeId, isDeleted: false });
+            if (!recipe) {
+                return NextResponse.json({ status: 404, message: 'Recipe not found', data: {} }, { status: 404 });
+            }
+            const recipeIdToStore = recipe._id.toString();
+            const exists = wishlist.items.find((it: any) => it.recipeId && it.recipeId.toString() === recipeIdToStore);
+            if (exists) return NextResponse.json({ status: 400, message: 'Recipe already in wishlist', data: {} }, { status: 400 });
+            wishlist.items.push({ recipeId: recipeIdToStore, addedAt: new Date() });
+            await wishlist.save();
+            console.log('[wishlist] add recipe -> userId:', userId, 'recipeId:', recipeIdToStore, 'itemsCount:', wishlist.items.length);
+            return NextResponse.json({ status: 201, message: 'Recipe added to wishlist', data: { recipeId: recipeIdToStore, count: wishlist.items.length } }, { status: 201 });
+        }
     } catch (error) {
         console.error('Error adding to wishlist:', error);
         return NextResponse.json(
@@ -278,11 +243,11 @@ async function handleRemoveFromWishlist(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { productId } = body;
+        const { productId, recipeId } = body;
 
-        if (!productId) {
+        if (!productId && !recipeId) {
             return NextResponse.json(
-                { status: 400, message: 'Product ID is required', data: {} },
+                { status: 400, message: 'productId or recipeId is required', data: {} },
                 { status: 400 }
             );
         }
@@ -296,33 +261,39 @@ async function handleRemoveFromWishlist(req: NextRequest) {
             );
         }
 
-        // Convert productId to string for comparison
-        const productIdStr = productId.toString();
-        
-        // Remove item from wishlist
         const initialLength = wishlist.items.length;
-        wishlist.items = wishlist.items.filter(
-            (item: { productId: any }) => {
+
+        if (productId) {
+            wishlist.items = wishlist.items.filter((item: any) => {
                 const itemId = item.productId ? item.productId.toString() : null;
                 return itemId !== productId.toString();
-            }
-        );
+            });
+        }
+
+        if (recipeId) {
+            wishlist.items = wishlist.items.filter((item: any) => {
+                const itemId = item.recipeId ? item.recipeId.toString() : null;
+                return itemId !== recipeId.toString();
+            });
+        }
 
         // Check if item was actually removed
         if (wishlist.items.length === initialLength) {
             return NextResponse.json(
-                { status: 404, message: 'Product not found in wishlist', data: {} },
+                { status: 404, message: 'Item not found in wishlist', data: {} },
                 { status: 404 }
             );
         }
 
         await wishlist.save();
+        console.log('[wishlist] removed -> userId:', userId, 'productId:', productId || null, 'recipeId:', recipeId || null, 'itemsCount:', wishlist.items.length);
 
         return NextResponse.json({
             status: 200,
-            message: 'Product removed from wishlist',
+            message: 'Item removed from wishlist',
             data: {
-                productId,
+                productId: productId || null,
+                recipeId: recipeId || null,
                 count: wishlist.items.length,
             },
         });
