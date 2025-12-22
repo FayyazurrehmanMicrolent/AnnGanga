@@ -148,6 +148,73 @@ export async function POST(req: NextRequest) {
 
         const data = parsedData || {};
 
+        // Normalize productLinks: accept stringified arrays, comma-lists, single ids, or object arrays.
+        if (data.productLinks) {
+            let raw = data.productLinks;
+            // If string, try to parse JSON first
+            if (typeof raw === 'string') {
+                const s = raw.trim();
+                if (s.startsWith('[') || s.startsWith('{')) {
+                    try {
+                        raw = JSON.parse(s);
+                    } catch (e) {
+                        // fall through to other parsing
+                    }
+                }
+            }
+
+            // If after parse it's still a string (comma separated ids), split
+            if (typeof raw === 'string') {
+                raw = raw
+                    .split(',')
+                    .map((x: string) => x.trim())
+                    .filter(Boolean);
+            }
+
+            // If a single object provided, wrap it as array
+            if (raw && !Array.isArray(raw)) {
+                raw = [raw];
+            }
+
+            const normalized: any[] = [];
+            if (Array.isArray(raw)) {
+                for (const item of raw) {
+                    if (!item) continue;
+                    if (typeof item === 'string') {
+                        normalized.push({ productId: item });
+                        continue;
+                    }
+                    if (typeof item === 'object') {
+                        const entry: any = {
+                            productId: item.productId || item._id || item.id || null,
+                            title: item.title ?? null,
+                            image: item.image ?? item.images?.[0] ?? null,
+                            weight: item.weight ?? null,
+                            mrp: typeof item.mrp === 'number' ? item.mrp : item.mrp ? Number(item.mrp) : null,
+                            actualPrice:
+                                typeof item.actualPrice === 'number' ? item.actualPrice : item.actualPrice ? Number(item.actualPrice) : null,
+                            discountPercentage:
+                                typeof item.discountPercentage === 'number' ? item.discountPercentage : null,
+                        };
+
+                        // Compute discount if possible and not provided
+                        if ((entry.discountPercentage === null || entry.discountPercentage === undefined) && entry.mrp && entry.actualPrice) {
+                            try {
+                                const pct = ((entry.mrp - entry.actualPrice) / entry.mrp) * 100;
+                                entry.discountPercentage = Number(pct.toFixed(2));
+                            } catch (e) {
+                                entry.discountPercentage = null;
+                            }
+                        }
+
+                        normalized.push(entry);
+                    }
+                }
+            }
+
+            data.productLinks = normalized;
+        }
+
         if (action === 'create') {
             const { title, content, excerpt, author, tags, isPublished, productLinks } = data;
 

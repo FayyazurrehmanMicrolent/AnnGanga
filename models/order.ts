@@ -26,6 +26,7 @@ interface IOrder extends Document {
     items: IOrderItem[];
     subtotal: number;
     discount: number;
+    deliveryId?: string;
     deliveryCharges: number;
     total: number;
     couponCode?: string;
@@ -37,6 +38,7 @@ interface IOrder extends Document {
     deliveryType: 'normal' | 'expedited';
     orderStatus: 'pending' | 'confirmed' | 'packed' | 'dispatched' | 'delivered' | 'cancelled';
     estimatedDelivery?: Date;
+    orderSummaryId?: string;
     deliveryPartnerId?: string;
     trackingUrl?: string;
     trackingId?: string;
@@ -139,6 +141,11 @@ const orderSchema = new Schema<IOrder>(
             type: deliveryAddressSchema,
             required: true,
         },
+        deliveryId: {
+            type: String,
+            ref: 'Delivery',
+            default: null,
+        },
         deliveryType: {
             type: String,
             enum: ['normal', 'expedited'],
@@ -153,6 +160,10 @@ const orderSchema = new Schema<IOrder>(
             type: Date,
             default: null,
         },
+            orderSummaryId: {
+                type: String,
+                default: null,
+            },
         deliveryPartnerId: {
             type: String,
             default: null,
@@ -182,6 +193,7 @@ const orderSchema = new Schema<IOrder>(
 // Indexes for faster lookups
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ orderStatus: 1, createdAt: -1 });
+orderSchema.index({ orderSummaryId: 1 });
 // orderId has `unique: true` in the schema definition, so an index is already created.
 // Removed explicit index to avoid duplicate index warnings.
 

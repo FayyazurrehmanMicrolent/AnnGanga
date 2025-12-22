@@ -15,24 +15,24 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const {
             userId,
+            // accept either addressId or addressID
             addressId,
+            addressID,
+            address,
             paymentMethod,
+            orderId,
+            orderSummaryID,
             deliveryType,
             couponCode,
             rewardPoints,
         } = body;
 
+        const addrId = addressId || addressID || null;
+
         // Validation
         if (!userId) {
             return NextResponse.json(
                 { status: 400, message: 'User ID is required', data: {} },
-                { status: 400 }
-            );
-        }
-
-        if (!addressId) {
-            return NextResponse.json(
-                { status: 400, message: 'Delivery address is required', data: {} },
                 { status: 400 }
             );
         }
@@ -53,13 +53,61 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Get delivery address
-        const address = await Address.findOne({ addressId, userId, isDeleted: false });
-        if (!address) {
-            return NextResponse.json(
-                { status: 404, message: 'Delivery address not found', data: {} },
-                { status: 404 }
-            );
+        // Resolve delivery address: prefer provided addressId -> inline address object -> user's default -> most recent
+        let resolvedAddress: any = null;
+        if (addrId) {
+            resolvedAddress = await Address.findOne({ addressId: addrId, userId, isDeleted: false });
+            if (!resolvedAddress) {
+                return NextResponse.json(
+                    { status: 404, message: 'Delivery address not found for provided addressId', data: {} },
+                    { status: 404 }
+                );
+            }
+        } else if (address && typeof address === 'object') {
+            // Inline address provided in payload — validate required fields
+            const aName = address.name ? String(address.name).trim() : '';
+            const aPhone = address.phone ? String(address.phone).trim() : '';
+            const aAddr = address.address ? String(address.address).trim() : '';
+            const aCity = address.city ? String(address.city).trim() : '';
+            const aPincode = address.pincode ? String(address.pincode).trim() : '';
+
+            if (!aName || !aPhone || !aAddr || !aCity || !aPincode) {
+                return NextResponse.json(
+                    { status: 400, message: 'Inline address must include name, phone, address, city and pincode', data: {} },
+                    { status: 400 }
+                );
+            }
+
+            if (!/^\d{10}$/.test(aPhone)) {
+                return NextResponse.json({ status: 400, message: 'Phone number must be exactly 10 digits', data: {} }, { status: 400 });
+            }
+
+            if (!/^\d{6}$/.test(aPincode)) {
+                return NextResponse.json({ status: 400, message: 'Pincode must be exactly 6 digits', data: {} }, { status: 400 });
+            }
+
+            resolvedAddress = {
+                name: aName,
+                phone: aPhone,
+                address: aAddr,
+                landmark: address.landmark ? String(address.landmark).trim() : null,
+                city: aCity,
+                state: address.state ? String(address.state).trim() : null,
+                pincode: aPincode,
+            };
+        } else {
+            // Try default address first
+            resolvedAddress = await Address.findOne({ userId, isDefault: true, isDeleted: false });
+            if (!resolvedAddress) {
+                // Fallback to most recently updated address
+                resolvedAddress = await Address.findOne({ userId, isDeleted: false }).sort({ updatedAt: -1 });
+            }
+            if (!resolvedAddress) {
+                return NextResponse.json(
+                    { status: 400, message: 'No saved address found for user; include addressId or inline address in payload', data: {} },
+                    { status: 400 }
+                );
+            }
         }
 
         // Get product details and validate
@@ -213,15 +261,16 @@ export async function POST(req: NextRequest) {
             paymentMethod,
             paymentStatus: 'pending',
             deliveryAddress: {
-                name: address.name,
-                phone: address.phone,
-                address: address.address,
-                landmark: address.landmark,
-                city: address.city,
-                state: address.state,
-                pincode: address.pincode,
+                name: resolvedAddress.name,
+                phone: resolvedAddress.phone,
+                address: resolvedAddress.address,
+                landmark: resolvedAddress.landmark || null,
+                city: resolvedAddress.city,
+                state: resolvedAddress.state || null,
+                pincode: resolvedAddress.pincode,
             },
             deliveryType: deliveryType || 'normal',
+            orderSummaryId: orderSummaryID || null,
             orderStatus: 'pending',
             estimatedDelivery: new Date(Date.now() + (deliveryType === 'expedited' ? 2 : 5) * 24 * 60 * 60 * 1000),
         });

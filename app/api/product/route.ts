@@ -122,8 +122,10 @@ export async function GET(req: any) {
           ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
           : 0;
 
+        // Omit `delivery` from the returned product object
+        const { delivery, ...productWithoutDelivery } = product as any;
         return NextResponse.json(
-          { status: 200, message: 'Product fetched', data: { ...product, discountPercentage } },
+          { status: 200, message: 'Product fetched', data: { ...productWithoutDelivery, discountPercentage } },
           { status: 200 }
         );
       } catch (error) {
@@ -309,8 +311,9 @@ export async function GET(req: any) {
         appliedCouponDetails = null;
       }
 
+      const { delivery: _delivery, ...productSafe } = product as any;
       return {
-        ...product,
+        ...productSafe,
         averageRating: parseFloat(averageRating.toFixed(1)),
         totalReviews,
         discountPercentage,
@@ -381,10 +384,7 @@ export async function GET(req: any) {
       vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
       // normalized discount boolean
       discount: _discountBool,
-      // original delivery value (preserved) and two boolean helpers
-      delivery: deliveryParam || null,
-      expectedDelivery,
-      normalDelivery,
+      // NOTE: `delivery` filter intentionally excluded from response
       sortBy,
     };
 
@@ -649,11 +649,11 @@ export async function POST(req: NextRequest) {
           : 0;
 
         return {
-          ...product,
-          averageRating: parseFloat(averageRating.toFixed(1)),
-          totalReviews,
-          discountPercentage,
-        };
+            ...(() => { const { delivery: _delivery, ...productSafe } = product as any; return productSafe; })(),
+            averageRating: parseFloat(averageRating.toFixed(1)),
+            totalReviews,
+            discountPercentage,
+          };
       });
 
       // Filter by star rating if specified
@@ -704,9 +704,7 @@ export async function POST(req: NextRequest) {
         vitamins: vitaminsParam ? (Array.isArray(vitaminsParam) ? vitaminsParam : String(vitaminsParam).split(',').map((s: string) => s.trim())) : [],
         // normalized discount boolean
         discount: _discountBoolPost,
-        delivery: deliveryParam || null,
-        expectedDelivery: expectedDeliveryPost,
-        normalDelivery: normalDeliveryPost,
+        // NOTE: `delivery` filter intentionally excluded from response
         sortBy,
       };
 
@@ -1334,7 +1332,7 @@ export async function POST(req: NextRequest) {
         vitamins: vitaminsList,
         dietary: dietaryList,
         tags: tagsList,
-        delivery: deliveryList,
+        // delivery: deliveryList,
         healthBenefits: healthBenefits ?? null,
         description: description ?? null,
         images: imagesPaths,

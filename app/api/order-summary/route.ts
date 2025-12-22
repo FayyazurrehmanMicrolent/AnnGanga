@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import Cart from '@/models/cart';
 import Product from '@/models/product';
+import Delivery from '@/models/delivery';
 
 async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
     const authHeader = req.headers.get('authorization');
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
         const cart = await Cart.findOne({ userId });
         if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
             return NextResponse.json(
-            {
+                {
                     status: 200,
                     message: 'Order summary fetched successfully',
                     data: {
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
                         subtotal: 0,
                         shipping: 0,
                         discount: 0,
+                        orderId: cart ? cart.cartId : null,
                         total: 0,
                         appliedCoupon: null,
                     },
@@ -117,11 +119,34 @@ export async function GET(req: NextRequest) {
             };
         });
 
-        const subtotal = itemsWithDetails.reduce((sum:any, it:any) => sum + it.total, 0);
+        const subtotal = itemsWithDetails.reduce((sum: any, it: any) => sum + it.total, 0);
 
-        // Simple flat shipping rate (can be replaced by address-based logic later)
+        // Simple flat shipping rate (fallback). If a delivered Delivery exists for the user,
+        // prefer its recorded price and include delivery info in the response.
         const SHIPPING_RATE = 1.5;
-        const shipping = subtotal > 0 ? SHIPPING_RATE : 0;
+        let shipping = subtotal > 0 ? SHIPPING_RATE : 0;
+
+        // Check for latest delivery for this user. Use most recent delivery record (no status filter).
+        let deliveryInfo: any = null;
+        try {
+            let recent: any = await Delivery.findOne({ userId, isDeleted: false }).sort({ updatedAt: -1 }).lean();
+            // Some mongoose typings or usages may return arrays in certain cases — normalize to an object or null
+            if (Array.isArray(recent)) recent = recent.length > 0 ? recent[0] : null;
+            if (recent && typeof recent === 'object') {
+                const priceVal = recent.price;
+                const dprice = (priceVal !== undefined && priceVal !== null) ? Number(priceVal) : shipping;
+                if (!isNaN(dprice)) shipping = dprice;
+                deliveryInfo = {
+                    deliveryId: recent.deliveryId || null,
+                    name: recent.name || null,
+                    price: (dprice !== undefined && !isNaN(dprice)) ? dprice : null,
+                    currency: recent.currency || 'INR',
+                };
+            }
+        } catch (e) {
+            // ignore delivery lookup errors
+            deliveryInfo = null;
+        }
 
         // Calculate coupon discount if any
         const appliedCoupon = cart.appliedCoupon || null;
@@ -138,18 +163,21 @@ export async function GET(req: NextRequest) {
                     subtotal,
                     shipping,
                     discount: discountAmount,
+                    orderId: cart.cartId || null,
                     total,
                     appliedCoupon: appliedCoupon
                         ? {
-                              couponId: appliedCoupon.couponId || null,
-                              code: appliedCoupon.code || null,
-                              discountType: appliedCoupon.discountType || null,
-                              discountValue: appliedCoupon.discountValue || null,
-                              appliedToProducts: Array.isArray(appliedCoupon.appliedToProducts)
-                                  ? appliedCoupon.appliedToProducts
-                                  : [],
-                          }
+                            couponId: appliedCoupon.couponId || null,
+                            code: appliedCoupon.code || null,
+                            discountType: appliedCoupon.discountType || null,
+                            discountValue: appliedCoupon.discountValue || null,
+                            appliedToProducts: Array.isArray(appliedCoupon.appliedToProducts)
+                                ? appliedCoupon.appliedToProducts
+                                : [],
+                        }
                         : null,
+                    // include delivery info when available
+                    delivery: deliveryInfo,
                 },
             },
             { status: 200 }

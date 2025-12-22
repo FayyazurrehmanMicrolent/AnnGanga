@@ -1,13 +1,23 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+interface IProductLink {
+  productId: string;
+  title?: string | null;
+  image?: string | null;
+  weight?: string | null;
+  mrp?: number | null;
+  actualPrice?: number | null;
+  discountPercentage?: number | null;
+}
+
 interface IBlog extends Document {
   blogId: string;
   title: string;
   content: string;
   excerpt?: string;
   images: string[];
-  productLinks?: string[]; // Array of productIds
+  productLinks?: IProductLink[]; // Array of product subdocuments
   author?: string;
   publishedDate?: Date;
   tags?: string[];
@@ -44,8 +54,20 @@ const blogSchema = new Schema<IBlog>(
       default: [],
     },
     productLinks: {
-      type: [String],
-      ref: 'Product',
+      type: [
+        new Schema(
+          {
+            productId: { type: String, ref: 'Product', required: true },
+            title: { type: String, default: null },
+            image: { type: String, default: null },
+            weight: { type: String, default: null },
+            mrp: { type: Number, default: null },
+            actualPrice: { type: Number, default: null },
+            discountPercentage: { type: Number, default: null },
+          },
+          { _id: false }
+        ),
+      ],
       default: [],
     },
     author: {
@@ -74,7 +96,12 @@ const blogSchema = new Schema<IBlog>(
   }
 );
 
-const Blog = mongoose.models.Blog || mongoose.model<IBlog>('Blog', blogSchema);
+// Ensure model is recompiled in dev/hot-reload environments
+if (mongoose.models.Blog) {
+  delete mongoose.models.Blog;
+}
+
+const Blog = mongoose.model<IBlog>('Blog', blogSchema);
 
 export default Blog;
-export type { IBlog };
+export type { IBlog, IProductLink };

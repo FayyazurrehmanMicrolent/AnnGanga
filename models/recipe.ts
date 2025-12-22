@@ -1,21 +1,31 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+interface IProductLink {
+    productId: string;
+    title?: string | null;
+    image?: string | null;
+    weight?: string | null;
+    mrp?: number | null;
+    actualPrice?: number | null;
+    discountPercentage?: number | null;
+}
+
 interface IRecipe extends Document {
-    recipeId: string;
-    title: string;
-    description?: string;
-    images: string[];
-    ingredients: string[];
-    instructions: string[];
-    prepTime?: number; // in minutes
-    cookTime?: number; // in minutes
-    servings?: number;
-    productLinks?: string[]; // Array of productIds
-    tags?: string[];
-    isDeleted: boolean;
-    createdAt: Date;
-    updatedAt: Date;
+        recipeId: string;
+        title: string;
+        description?: string;
+        images: string[];
+        ingredients: string[];
+        instructions: string[];
+        prepTime?: number; // in minutes
+        cookTime?: number; // in minutes
+        servings?: number;
+        productLinks?: IProductLink[]; // Array of product link objects
+        tags?: string[];
+        isDeleted: boolean;
+        createdAt: Date;
+        updatedAt: Date;
 }
 
 const recipeSchema = new Schema<IRecipe>(
@@ -63,8 +73,20 @@ const recipeSchema = new Schema<IRecipe>(
             default: null,
         },
         productLinks: {
-            type: [String],
-            ref: 'Product',
+            type: [
+                new Schema(
+                    {
+                        productId: { type: String, ref: 'Product', required: true },
+                        title: { type: String, default: null },
+                        image: { type: String, default: null },
+                        weight: { type: String, default: null },
+                        mrp: { type: Number, default: null },
+                        actualPrice: { type: Number, default: null },
+                        discountPercentage: { type: Number, default: null },
+                    },
+                    { _id: false }
+                ),
+            ],
             default: [],
         },
         tags: {
