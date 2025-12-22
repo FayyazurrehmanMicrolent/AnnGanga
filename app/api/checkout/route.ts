@@ -5,6 +5,7 @@ import Cart from '@/models/cart';
 import Order from '@/models/order';
 import Product from '@/models/product';
 import Coupon from '@/models/coupon';
+import SelectedCoupon from '@/models/selectedCoupon';
 import Address from '@/models/address';
 import { redeemRewards, awardRewards, calculateRewardsForOrder } from '@/lib/rewards';
 
@@ -278,10 +279,16 @@ export async function POST(req: NextRequest) {
         await order.save();
 
         // Clear cart using a new session to avoid transaction conflicts
+        // Also remove any applied coupon so it doesn't persist after successful order
         await Cart.updateOne(
             { _id: cart._id },
-            { $set: { items: [] } }
+            { $set: { items: [], appliedCoupon: null } }
         );
+        try {
+            await SelectedCoupon.deleteOne({ userId });
+        } catch (e) {
+            console.warn('Failed to remove selected coupon after checkout:', e);
+        }
 
         // Calculate and award rewards for this order
         const rewardCalc = await calculateRewardsForOrder(userId, total);

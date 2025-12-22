@@ -73,9 +73,36 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        let recipes: any[] = await Recipe.find({ isDeleted: false }).sort({ createdAt: -1 }).lean();
+        // Pagination & search support
+        const pageParam = url.searchParams.get('page') || url.searchParams.get('pageNo') || url.searchParams.get('p');
+        const limitParam = url.searchParams.get('limit') || url.searchParams.get('pageSize') || url.searchParams.get('size');
+        const searchParam = url.searchParams.get('search') || url.searchParams.get('q');
 
-        // Try to compute per-user isLike flags when auth token present
+        const page = Math.max(1, Number(pageParam) || 1);
+        const limit = Math.min(100, Math.max(1, Number(limitParam) || 20));
+
+        const filter: any = { isDeleted: false };
+        if (searchParam && String(searchParam).trim()) {
+            const q = String(searchParam).trim();
+            const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            filter.$or = [
+                { title: regex },
+                { description: regex },
+                { tags: { $in: [regex] } },
+                { ingredients: { $in: [regex] } }
+            ];
+        }
+
+        const total = await Recipe.countDocuments(filter);
+        const totalPages = Math.ceil(total / limit) || 1;
+
+        let recipes: any[] = await Recipe.find(filter)
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .lean();
+
+        // Attach per-user isLike flags when user authenticated
         try {
             const authHeader = req.headers.get('authorization');
             let token: string | undefined;
@@ -84,26 +111,34 @@ export async function GET(req: NextRequest) {
             if (token) {
                 const decoded: any = verifyToken(token);
                 const userId = decoded?.userId;
-                console.log('[recipes GET list] token present -> userId:', userId);
                 if (userId) {
                     const wishlist: any = await Wishlist.findOne({ userId }).lean();
                     const recipeIds = (wishlist?.items || []).map((it: any) => String(it.recipeId));
-                    console.log('[recipes GET list] user wishlist recipeIds:', recipeIds);
                     const recipeSet = new Set(recipeIds);
                     recipes = recipes.map((r: any) => ({ ...r, isLike: recipeSet.has(String(r._id)) }));
                 } else {
                     recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
                 }
             } else {
-                console.log('[recipes GET list] no token found');
                 recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
             }
         } catch (e) {
             console.warn('Could not compute per-user isLike for list:', e);
             recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
         }
+
         return NextResponse.json(
-            { status: 200, message: 'Recipes fetched', data: recipes },
+            {
+                status: 200,
+                message: 'Recipes fetched',
+                data: {
+                    items: recipes,
+                    total,
+                    page,
+                    limit,
+                    totalPages
+                }
+            },
             { status: 200 }
         );
     } catch (error: any) {
@@ -199,6 +234,20 @@ export async function POST(req: NextRequest) {
                     }
                 }
             }
+        } else {
+            // Fallback: some clients (Postman raw/text) may omit Content-Type.
+            // Try to parse body as JSON if present so callers can POST { action:'list', ... }
+            try {
+                const body = await req.json();
+                if (body && typeof body === 'object') {
+                    action = (body.action || action).toLowerCase();
+                    parsedData = body.data || body;
+                    id = body.id || body.recipeId || id;
+                    if (Array.isArray(body.images)) imagesPaths = body.images;
+                }
+            } catch (e) {
+                // ignore parse errors and keep defaults
+            }
         }
 
         const data = parsedData || {};
@@ -267,6 +316,79 @@ export async function POST(req: NextRequest) {
                 if (wishlist.items.length !== initialLength) await wishlist.save();
                 return NextResponse.json({ status: 200, message: 'Recipe removed from wishlist', data: { recipeId: recipeIdToStore, isLike: false } }, { status: 200 });
             }
+        }
+
+        // Allow listing via POST with JSON body: { action: 'list', page, limit, search, ... }
+        if (action === 'list' || action === 'fetch' || action === 'search') {
+            const page = Math.max(1, Number(data.page) || 1);
+            const limit = Math.min(100, Math.max(1, Number(data.limit) || 20));
+
+            const filter: any = { isDeleted: false };
+            const searchParam = data.search || data.q || data.query;
+            if (searchParam && String(searchParam).trim()) {
+                const q = String(searchParam).trim();
+                const regex = new RegExp(q.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&'), 'i');
+                filter.$or = [
+                    { title: regex },
+                    { description: regex },
+                    { tags: { $in: [regex] } },
+                    { ingredients: { $in: [regex] } }
+                ];
+            }
+
+            // allow exact tag filters as array
+            if (Array.isArray(data.tags) && data.tags.length) {
+                filter.tags = { $in: data.tags };
+            }
+
+            const total = await Recipe.countDocuments(filter);
+            const totalPages = Math.ceil(total / limit) || 1;
+
+            let recipes: any[] = await Recipe.find(filter)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean();
+
+            // attach per-user isLike if token present
+            try {
+                const authHeader = req.headers.get('authorization');
+                let token: string | undefined;
+                if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+                if (!token) token = req.cookies.get('authToken')?.value || undefined;
+                if (token) {
+                    const decoded: any = verifyToken(token);
+                    const userId = decoded?.userId;
+                    if (userId) {
+                        const wishlist: any = await Wishlist.findOne({ userId }).lean();
+                        const recipeIds = (wishlist?.items || []).map((it: any) => String(it.recipeId));
+                        const recipeSet = new Set(recipeIds);
+                        recipes = recipes.map((r: any) => ({ ...r, isLike: recipeSet.has(String(r._id)) }));
+                    } else {
+                        recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+                    }
+                } else {
+                    recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+                }
+            } catch (e) {
+                console.warn('Could not compute per-user isLike for POST list:', e);
+                recipes = recipes.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+            }
+
+            return NextResponse.json(
+                {
+                    status: 200,
+                    message: 'Recipes fetched',
+                    data: {
+                        items: recipes,
+                        total,
+                        page,
+                        limit,
+                        totalPages
+                    }
+                },
+                { status: 200 }
+            );
         }
 
         if (action === 'create') {

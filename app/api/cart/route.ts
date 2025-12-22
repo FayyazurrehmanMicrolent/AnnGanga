@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import Cart from '@/models/cart';
 import Product from '@/models/product';
+import SelectedCoupon from '@/models/selectedCoupon';
 
 // Helper: get or create cart for user
 async function getOrCreateCart(userId: string) {
@@ -305,6 +306,15 @@ export async function POST(req: NextRequest) {
             if (quantity === 0) {
                 // Remove item
                 cart.items.splice(itemIndex, 1);
+                // If cart is now empty, clear any applied coupon
+                if (!cart.items.length) {
+                    cart.appliedCoupon = null;
+                    try {
+                        await SelectedCoupon.deleteOne({ userId });
+                    } catch (e) {
+                        console.warn('Failed to remove selected coupon after update->0:', e);
+                    }
+                }
             } else {
                 // Update quantity
                 cart.items[itemIndex].quantity = Number(quantity);
@@ -345,6 +355,15 @@ export async function POST(req: NextRequest) {
             }
 
             cart.items.splice(itemIndex, 1);
+            // If cart is now empty, also clear applied coupon so it doesn't persist
+            if (!cart.items.length) {
+                cart.appliedCoupon = null;
+                try {
+                    await SelectedCoupon.deleteOne({ userId });
+                } catch (e) {
+                    console.warn('Failed to remove selected coupon after remove:', e);
+                }
+            }
             await cart.save();
 
             return NextResponse.json(
@@ -360,6 +379,13 @@ export async function POST(req: NextRequest) {
         // CLEAR CART
         if (action === 'clear') {
             cart.items = [];
+            // Clearing cart should also remove any applied coupon
+            cart.appliedCoupon = null;
+            try {
+                await SelectedCoupon.deleteOne({ userId });
+            } catch (e) {
+                console.warn('Failed to remove selected coupon after clear:', e);
+            }
             await cart.save();
 
             return NextResponse.json(
