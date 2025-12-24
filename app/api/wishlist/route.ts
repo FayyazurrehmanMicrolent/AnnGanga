@@ -16,7 +16,7 @@ async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
             return decoded.userId;
         }
     }
-    
+
     // Then try to get token from cookie
     const token = req.cookies.get('authToken')?.value;
     if (token) {
@@ -25,7 +25,7 @@ async function getUserIdFromToken(req: NextRequest): Promise<string | null> {
             return decoded.userId;
         }
     }
-    
+
     return null;
 }
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
 // POST: Add item to wishlist
 export async function POST(req: NextRequest) {
-    return handleAddToWishlist(req);
+    return handleUpsertWishlist(req);
 }
 
 // DELETE: Remove item from wishlist
@@ -60,7 +60,7 @@ async function handleGetWishlist(req: NextRequest) {
 
         // Find wishlist or create a new one if it doesn't exist
         let wishlist = await Wishlist.findOne({ userId });
-        
+
         // If no wishlist exists, create a new one and return empty
         if (!wishlist) {
             const newWishlist = new Wishlist({ userId, items: [] });
@@ -217,10 +217,125 @@ async function handleAddToWishlist(req: NextRequest) {
             wishlist.items.push({ recipeId: recipeIdToStore, addedAt: new Date() });
             await wishlist.save();
             console.log('[wishlist] add recipe -> userId:', userId, 'recipeId:', recipeIdToStore, 'itemsCount:', wishlist.items.length);
-            return NextResponse.json({ status: 201, message: 'Recipe added to wishlist', data: { recipeId: recipeIdToStore, count: wishlist.items.length } }, { status: 201 });
+            return NextResponse.json({ status: 201, message: 'Recipe added to wishlist' }, { status: 201 });
         }
     } catch (error) {
         console.error('Error adding to wishlist:', error);
+        return NextResponse.json(
+            { status: 500, message: 'Internal server error', data: {} },
+            { status: 500 }
+        );
+    }
+}
+
+// Handle POST /api/wishlist for both add and remove based on isLike
+async function handleUpsertWishlist(req: NextRequest) {
+    try {
+        await connectDB();
+
+        // Get user ID from token
+        const userId = await getUserIdFromToken(req);
+        if (!userId) {
+            return NextResponse.json(
+                { status: 401, message: 'Unauthorized. Please log in.', data: {} },
+                { status: 401 }
+            );
+        }
+
+        const body = await req.json();
+        const { productId, recipeId, isLike } = body;
+
+        if (!productId && !recipeId) {
+            return NextResponse.json(
+                { status: 400, message: 'productId or recipeId is required', data: {} },
+                { status: 400 }
+            );
+        }
+
+        // If client explicitly sent isLike === false treat as remove
+        if (isLike === false) {
+            // Find wishlist
+            const wishlist = await Wishlist.findOne({ userId });
+            if (!wishlist) {
+                return NextResponse.json(
+                    { status: 404, message: 'Wishlist not found', data: {} },
+                    { status: 404 }
+                );
+            }
+
+            const initialLength = wishlist.items.length;
+
+            if (productId) {
+                wishlist.items = wishlist.items.filter((item: any) => {
+                    const itemId = item.productId ? item.productId.toString() : null;
+                    return itemId !== productId.toString();
+                });
+            }
+
+            if (recipeId) {
+                wishlist.items = wishlist.items.filter((item: any) => {
+                    const itemId = item.recipeId ? item.recipeId.toString() : null;
+                    return itemId !== recipeId.toString();
+                });
+            }
+
+            if (wishlist.items.length === initialLength) {
+                return NextResponse.json(
+                    { status: 404, message: 'Item not found in wishlist', data: {} },
+                    { status: 404 }
+                );
+            }
+
+            await wishlist.save();
+            console.log('[wishlist] removed via upsert -> userId:', userId, 'productId:', productId || null, 'recipeId:', recipeId || null, 'itemsCount:', wishlist.items.length);
+
+            return NextResponse.json({
+                status: 200,
+                message: 'Item removed from wishlist',        
+            });
+        }
+
+        // Otherwise treat as add (isLike omitted or true)
+        // Find or create wishlist
+        let wishlist = await Wishlist.findOne({ userId });
+        if (!wishlist) {
+            wishlist = new Wishlist({ userId, items: [] });
+        }
+
+        // Handle product add
+        if (productId) {
+            // Verify product exists
+            let product = await Product.findOne({ _id: productId, isDeleted: false });
+            if (!product) product = await Product.findOne({ productId: productId, isDeleted: false });
+            if (!product) {
+                return NextResponse.json({ status: 404, message: 'Product not found', data: {} }, { status: 404 });
+            }
+            const productIdToStore = product._id.toString();
+            const exists = wishlist.items.find((it: any) => it.productId && it.productId.toString() === productIdToStore);
+            if (exists) return NextResponse.json({ status: 400, message: 'Product already in wishlist', data: {} }, { status: 400 });
+            wishlist.items.push({ productId: productIdToStore, addedAt: new Date() });
+            await wishlist.save();
+            console.log('[wishlist] add product via upsert -> userId:', userId, 'productId:', productIdToStore, 'itemsCount:', wishlist.items.length);
+            return NextResponse.json({ status: 201, message: 'Product added to wishlist', data: { productId: productIdToStore, count: wishlist.items.length } }, { status: 201 });
+        }
+
+        // Handle recipe add
+        if (recipeId) {
+            let recipe = await Recipe.findOne({ _id: recipeId, isDeleted: false });
+            if (!recipe) recipe = await Recipe.findOne({ recipeId: recipeId, isDeleted: false });
+            if (!recipe) {
+                return NextResponse.json({ status: 404, message: 'Recipe not found', data: {} }, { status: 404 });
+            }
+            const recipeIdToStore = recipe._id.toString();
+            const exists = wishlist.items.find((it: any) => it.recipeId && it.recipeId.toString() === recipeIdToStore);
+            if (exists) return NextResponse.json({ status: 400, message: 'Recipe already in wishlist', data: {} }, { status: 400 });
+            wishlist.items.push({ recipeId: recipeIdToStore, addedAt: new Date() });
+            await wishlist.save();
+            console.log('[wishlist] add recipe via upsert -> userId:', userId, 'recipeId:', recipeIdToStore, 'itemsCount:', wishlist.items.length);
+            return NextResponse.json({ status: 201, message: 'Recipe added to wishlist' }, { status: 201 });
+        }
+    } catch (error) {
+        console.error('Error upserting wishlist:', error);
         return NextResponse.json(
             { status: 500, message: 'Internal server error', data: {} },
             { status: 500 }
@@ -291,11 +406,6 @@ async function handleRemoveFromWishlist(req: NextRequest) {
         return NextResponse.json({
             status: 200,
             message: 'Item removed from wishlist',
-            data: {
-                productId: productId || null,
-                recipeId: recipeId || null,
-                count: wishlist.items.length,
-            },
         });
     } catch (error) {
         console.error('Error removing from wishlist:', error);

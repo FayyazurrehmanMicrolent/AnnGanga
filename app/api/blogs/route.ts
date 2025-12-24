@@ -46,17 +46,12 @@ export async function GET(req: NextRequest) {
             filter.isPublished = true;
         }
 
-        // Support search via query param (search or q) matching title, content, excerpt, tags
+        // Support search via query param (search or q) matching title only
         const searchParam = url.searchParams.get('search') || url.searchParams.get('q');
         if (searchParam && String(searchParam).trim()) {
             const q = String(searchParam).trim();
-            const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-            filter.$or = [
-                { title: regex },
-                { content: regex },
-                { excerpt: regex },
-                { tags: { $in: [regex] } }
-            ];
+            const regex = new RegExp(q.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&'), 'i');
+            filter.title = regex;
         }
 
         const blogs = await Blog.find(filter).sort({ createdAt: -1 }).lean();
@@ -287,16 +282,7 @@ export async function POST(req: NextRequest) {
             if (searchParam && String(searchParam).trim()) {
                 const q = String(searchParam).trim();
                 const regex = new RegExp(q.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&'), 'i');
-                filter.$or = [
-                    { title: regex },
-                    { content: regex },
-                    { tags: { $in: [regex] } }
-                ];
-            }
-
-            // allow exact tag filters as array
-            if (Array.isArray(data.tags) && data.tags.length) {
-                filter.tags = { $in: data.tags };
+                filter.title = regex;
             }
 
             // published filter override (body can include published=true)

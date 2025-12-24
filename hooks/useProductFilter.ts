@@ -83,11 +83,9 @@ export function useProductFilter(
     setError(null);
 
     try {
-      const response = await fetch(`/api/product?action=filter`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(filters),
-      });
+      // Use GET with query string so the GET /api/product handler receives filters
+      const qs = buildFilterQueryString(filters);
+      const response = await fetch(`/api/product?${qs}`, { method: 'GET' });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

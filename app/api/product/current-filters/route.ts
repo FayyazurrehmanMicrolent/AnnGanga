@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
       limit: 20,
       minPrice: null,
       maxPrice: null,
+      rating: null,
       categoryId: null,
       dietary: [],
       vitamins: [],
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
       if (url.searchParams.has('limit')) res.limit = parseInt(url.searchParams.get('limit') || '20');
       if (url.searchParams.has('minPrice')) res.minPrice = Number(url.searchParams.get('minPrice')) || null;
       if (url.searchParams.has('maxPrice')) res.maxPrice = Number(url.searchParams.get('maxPrice')) || null;
+      if (url.searchParams.has('rating')) res.rating = Number(url.searchParams.get('rating')) || null;
       if (url.searchParams.has('categoryId')) res.categoryId = url.searchParams.get('categoryId');
       if (url.searchParams.has('dietary')) {
         const d = url.searchParams.get('dietary') || '';
@@ -73,6 +75,7 @@ export async function GET(req: NextRequest) {
         page: cookieFilters.page ?? defaultFilters.page,
         limit: cookieFilters.limit ?? defaultFilters.limit,
         minPrice: cookieFilters.minPrice ?? defaultFilters.minPrice,
+        rating: cookieFilters.rating ?? defaultFilters.rating,
         maxPrice: cookieFilters.maxPrice ?? defaultFilters.maxPrice,
         categoryId: cookieFilters.categoryId ?? defaultFilters.categoryId,
         dietary: Array.isArray(cookieFilters.dietary) ? cookieFilters.dietary : (cookieFilters.dietary ? String(cookieFilters.dietary).split(',').map((s: string) => s.trim()).filter(Boolean) : []),
