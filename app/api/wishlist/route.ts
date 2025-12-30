@@ -85,7 +85,7 @@ async function handleGetWishlist(req: NextRequest) {
 
         // Fetch products and recipes
         const [products, recipes] = await Promise.all([
-            Product.find({ _id: { $in: productIds }, isDeleted: false }).select('_id title mrp actualPrice images categoryId productId'),
+            Product.find({ _id: { $in: productIds }, isDeleted: false }).select('_id title mrp actualPrice images categoryId productId weightVsPrice'),
             Recipe.find({ _id: { $in: recipeIds }, isDeleted: false }).select('_id title images recipeId')
         ]);
 
@@ -113,6 +113,9 @@ async function handleGetWishlist(req: NextRequest) {
                     actualPrice: product.actualPrice,
                     images: product.images,
                     categoryId: product.categoryId,
+                    // provide a primary weight (first entry) and the full weight/price options
+                    weight: Array.isArray(product.weightVsPrice) && product.weightVsPrice.length ? product.weightVsPrice[0].weight : null,
+                    weightVsPrice: product.weightVsPrice || [],
                     addedAt: item.addedAt || new Date()
                 };
             }
