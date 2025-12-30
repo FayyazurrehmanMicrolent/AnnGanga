@@ -112,7 +112,7 @@ export async function GET(req: NextRequest, context: any) {
         return NextResponse.json(
             {
                 status: 200,
-                message: 'Reviews fetched successfully',
+                message: 'Reviews fetched successfully',    
                 data: {
                     reviews: reviewsWithUsers,
                     pagination: {
@@ -120,12 +120,7 @@ export async function GET(req: NextRequest, context: any) {
                         limit,
                         total,
                         pages,
-                    },
-                    stats: {
-                        totalReviews,
-                        averageRating: Math.round(averageRating * 10) / 10,
-                        breakdown,
-                    },
+                    },            
                 },
             },
             { status: 200 }

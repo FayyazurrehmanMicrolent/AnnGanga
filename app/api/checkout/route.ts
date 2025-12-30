@@ -7,6 +7,7 @@ import Product from '@/models/product';
 import Coupon from '@/models/coupon';
 import SelectedCoupon from '@/models/selectedCoupon';
 import Address from '@/models/address';
+import User from '@/models/users';
 import { redeemRewards, awardRewards, calculateRewardsForOrder } from '@/lib/rewards';
 
 export async function POST(req: NextRequest) {
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
 
         const body = await req.json();
         const {
-            userId,
+            userId: incomingUserId,
             // accept either addressId or addressID
             addressId,
             addressID,
@@ -27,6 +28,9 @@ export async function POST(req: NextRequest) {
             couponCode,
             rewardPoints,
         } = body;
+
+        // Normalize userId: allow clients to send either users.id (UUID) or Mongo _id
+        let userId = incomingUserId;
 
         const addrId = addressId || addressID || null;
 
@@ -45,8 +49,23 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Get cart
-        const cart = await Cart.findOne({ userId });
+        // Get cart. The system stores `cart.userId` as the Mongo `_id` (string),
+        // but some clients send the user's UUID (`users.id`). Try both.
+        let cart = await Cart.findOne({ userId });
+        if ((!cart || cart.items.length === 0) && userId) {
+            // If client provided the UUID (it contains a dash), try resolving to Mongo _id
+            try {
+                const maybeUser = await User.findOne({ id: userId, isDeleted: false });
+                if (maybeUser) {
+                    // map to the Mongo _id so orders and carts use the same identifier
+                    userId = String(maybeUser._id);
+                    cart = await Cart.findOne({ userId });
+                }
+            } catch (e) {
+                // ignore mapping errors and fall through to empty cart response
+            }
+        }
+
         if (!cart || cart.items.length === 0) {
             return NextResponse.json(
                 { status: 400, message: 'Cart is empty', data: {} },

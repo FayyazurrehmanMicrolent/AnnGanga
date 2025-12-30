@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import SelectedCoupon from '@/models/selectedCoupon';
+import Cart from '@/models/cart';
 
 async function getUrl(req: NextRequest) {
   try {
@@ -15,13 +16,36 @@ export async function POST(req: NextRequest) {
   try {
     await connectDB();
 
+    const url = await getUrl(req);
     const body = await req.json().catch(() => ({}));
-    const userId = (body.userId || body.userid || body.user || '').toString();
+    const action = (body.action || '').toString().toLowerCase();
+    let userId = (
+      body.userId || body.userid || body.user || body.userID || body.USERID || body.user_id || ''
+    ).toString();
+    if (!userId) {
+      userId = (url.searchParams.get('userId') || url.searchParams.get('userid') || '').toString();
+    }
     const couponCode = (body.couponCode || body.code || body.coupon || '').toString();
 
     if (!userId) {
       return NextResponse.json({ status: 400, message: 'userId is required', data: {} }, { status: 400 });
     }
+
+    // Support unselect via this endpoint for compatibility with clients
+    if (action === 'unselect') {
+      try {
+        await SelectedCoupon.deleteOne({ userId });
+      } catch (e) {
+        console.warn('Failed to delete SelectedCoupon for user during unselect:', e);
+      }
+      try {
+        await Cart.findOneAndUpdate({ userId }, { $set: { appliedCoupon: null } });
+      } catch (e) {
+        console.warn('Failed to clear appliedCoupon on Cart during unselect:', e);
+      }
+      return NextResponse.json({ status: 200, message: 'Coupon unselected for user', data: {} }, { status: 200 });
+    }
+
     if (!couponCode) {
       return NextResponse.json({ status: 400, message: 'couponCode is required', data: {} }, { status: 400 });
     }

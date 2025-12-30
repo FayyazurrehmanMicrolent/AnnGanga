@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Coupon from '@/models/coupon';
 import Cart from '@/models/cart';
+import SelectedCoupon from '@/models/selectedCoupon';
 
 // Helper: find coupon by couponId or _id
 async function findCouponByIdSafe(id: string) {
@@ -371,9 +372,23 @@ export async function POST(req: NextRequest) {
             // For unselect, we just clear appliedCoupon on cart
             if (action === 'unselect') {
                 const cart = await Cart.findOne({ userId });
+                // Always remove the SelectedCoupon entry if present (client may have separate selected record)
+                try {
+                    await SelectedCoupon.deleteOne({ userId });
+                } catch (e) {
+                    console.warn('Failed to delete SelectedCoupon during unselect:', e);
+                }
+
+                // If cart exists but has no appliedCoupon, we've still removed the selected record above
                 if (!cart || !cart.appliedCoupon) {
+                    // ensure cart.appliedCoupon is null if cart exists
+                    if (cart && cart.appliedCoupon) {
+                        cart.appliedCoupon = null;
+                        try { await cart.save(); } catch (e) { console.warn('Failed to clear appliedCoupon on cart:', e); }
+                    }
                     return NextResponse.json({ status: 200, message: 'No coupon applied', data: {} }, { status: 200 });
                 }
+
                 cart.appliedCoupon = null;
                 await cart.save();
                 return NextResponse.json({ status: 200, message: 'Coupon removed from cart', data: {} }, { status: 200 });

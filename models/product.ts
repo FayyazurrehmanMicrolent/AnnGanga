@@ -8,8 +8,12 @@ interface IWeightPrice {
 }
 
 interface INutrition {
-  weight: string;
-  info: string;
+  // flexible shape to allow JSON entries like { name, weight, value }
+  name?: string;
+  weight?: string;
+  value?: string;
+  // legacy field
+  info?: string | Record<string, string>;
 }
 
 interface IProduct extends Document {
@@ -25,7 +29,7 @@ interface IProduct extends Document {
   dietary?: string[];
   healthBenefits?: string | null;
   description?: string | null;
-  images: string[];
+  images: string[]; 
   categoryId?: string | null;
   frequentlyBoughtTogether?: string[]; 
   isDeleted: boolean;
@@ -42,10 +46,15 @@ const weightPriceSchema = new Schema<IWeightPrice>(
   { _id: false }
 );
 
+// allow nutrition entries to be flexible JSON or legacy { weight, info } shape
 const nutritionSchema = new Schema<INutrition>(
   {
-    weight: { type: String, required: true },
-    info: { type: String, required: true },
+    // use Mixed so we accept object shapes that admins may send
+    // individual fields are optional to preserve flexibility
+    name: { type: String, required: false },
+    weight: { type: String, required: false },
+    value: { type: String, required: false },
+    info: { type: Schema.Types.Mixed, required: false },
   },
   { _id: false }
 );
@@ -73,6 +82,7 @@ const productSchema = new Schema<IProduct>(
     categoryId: { type: String, ref: 'Category', default: null },
     frequentlyBoughtTogether: { type: [String], ref: 'Product', default: [] },
     isDeleted: { type: Boolean, default: false },
+    isLike: { type: Boolean, default: false },
   },
   {
     timestamps: true,

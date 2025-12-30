@@ -52,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check if user is logged in
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/auth/get-profile');
+        const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+        const response = await fetchWithDefaults('/api/auth/get-profile');
         if (response.ok) {
           const data = await response.json();
           if (data.status === 200) {
@@ -76,13 +77,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      try {
+        const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+        await fetchWithDefaults('/api/auth/logout', { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+      } catch (e) {
+        console.error('Logout request failed:', e);
+      }
       setUser(null);
       setToken(null);
       router.push('/login');

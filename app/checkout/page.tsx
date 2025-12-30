@@ -29,7 +29,7 @@ interface CartItem {
 
 export default function CheckoutPage() {
     const router = useRouter();
-    const { user } = useAuth();
+const { user } = useAuth();
     const { items: cart, clearCart } = useCart();
 
     const [currentStep, setCurrentStep] = useState(1);

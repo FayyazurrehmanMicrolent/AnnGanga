@@ -67,26 +67,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: 200, message: 'Current filters (from query)', data: res }, { status: 200 });
     }
 
-    // Fallback to cookie
-    const cookieFilters = parseCookieFilters(req);
-    if (cookieFilters && typeof cookieFilters === 'object') {
-      // Normalize to expected shape
-      const normalized = {
-        page: cookieFilters.page ?? defaultFilters.page,
-        limit: cookieFilters.limit ?? defaultFilters.limit,
-        minPrice: cookieFilters.minPrice ?? defaultFilters.minPrice,
-        rating: cookieFilters.rating ?? defaultFilters.rating,
-        maxPrice: cookieFilters.maxPrice ?? defaultFilters.maxPrice,
-        categoryId: cookieFilters.categoryId ?? defaultFilters.categoryId,
-        dietary: Array.isArray(cookieFilters.dietary) ? cookieFilters.dietary : (cookieFilters.dietary ? String(cookieFilters.dietary).split(',').map((s: string) => s.trim()).filter(Boolean) : []),
-        vitamins: Array.isArray(cookieFilters.vitamins) ? cookieFilters.vitamins : (cookieFilters.vitamins ? String(cookieFilters.vitamins).split(',').map((s: string) => s.trim()).filter(Boolean) : []),
-        sortBy: cookieFilters.sortBy ?? defaultFilters.sortBy,
-      };
-      return NextResponse.json({ status: 200, message: 'Current filters (from cookie)', data: normalized }, { status: 200 });
-    }
-
-    // Nothing found — return defaults
-    return NextResponse.json({ status: 200, message: 'No filters set', data: defaultFilters }, { status: 200 });
+    // Cookie fallback removed: clients should supply filters via query
+    // parameters or call POST /api/product?action=filter with a body.
+    return NextResponse.json({ status: 200, message: 'No filters set (cookie fallback disabled)', data: defaultFilters }, { status: 200 });
   } catch (error: any) {
     console.error('GET /api/product/current-filters error', error);
     return NextResponse.json({ status: 500, message: error.message || 'Failed to get current filters', data: {} }, { status: 500 });

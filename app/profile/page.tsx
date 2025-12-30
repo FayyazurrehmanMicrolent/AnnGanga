@@ -82,7 +82,8 @@ export default function EditProfile() {
         formDataToSend.append('profileImage', imageFile);
       }
 
-      const response = await fetch('/api/auth/update-profile', {
+      const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+      const response = await fetchWithDefaults('/api/auth/update-profile', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formDataToSend,

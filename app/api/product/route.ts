@@ -122,10 +122,103 @@ export async function GET(req: any) {
           ? Math.round(((product.mrp - product.actualPrice) / product.mrp) * 100)
           : 0;
 
+        // Ensure `isLike` is present (default false) and compute per-user isLike when authenticated
+        const out = typeof product === 'object' && typeof product.toObject === 'function' ? (product as any).toObject() : { ...product } as any;
+        out.isLike = out.isLike ?? false;
+        try {
+          const authHeader = req.headers.get('authorization');
+          let token: string | undefined;
+          if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+          if (!token) token = req.cookies.get('authToken')?.value || undefined;
+          if (token) {
+            const decoded: any = verifyToken(token);
+            const userId = decoded?.userId;
+            if (userId) {
+              const wishlist: any = await (await import('@/models/wishlist')).default.findOne({ userId }).lean();
+              const productIds = (wishlist?.items || []).map((it: any) => String(it.productId));
+              const productSet = new Set(productIds);
+              out.isLike = productSet.has(String(out._id));
+            }
+          }
+        } catch (e) {
+          console.warn('Could not compute per-user isLike for product:', e);
+        }
+
+        // Fetch reviews for this product to compute overall rating and total reviews
+        let totalReviews = 0;
+        let averageRating = 0;
+        try {
+          const reviewsList: any[] = await Review.find({ productId: out.productId, status: 'approved', isDeleted: false }).lean();
+          totalReviews = reviewsList.length;
+          if (totalReviews > 0) {
+            averageRating = reviewsList.reduce((sum: number, r: any) => sum + (Number(r.rating) || 0), 0) / totalReviews;
+          }
+        } catch (e) {
+          console.warn('Could not fetch product reviews for rating:', e);
+        }
+
+        // Build frequentlyBoughtTogether details (use explicit list if present, otherwise fallback to same-category products)
+        let frequentlyBoughtDetails: any[] = [];
+        try {
+          const fbtIds = Array.isArray(out.frequentlyBoughtTogether) && out.frequentlyBoughtTogether.length
+            ? out.frequentlyBoughtTogether.map((id: any) => String(id)).filter(Boolean)
+            : null;
+
+          let candidates: any[] = [];
+          if (fbtIds && fbtIds.length) {
+            candidates = await Product.find({ $or: [{ _id: { $in: fbtIds } }, { productId: { $in: fbtIds } }], isDeleted: false })
+              .select('_id title mrp actualPrice images categoryId productId tags')
+              .lean();
+            // preserve order of fbtIds
+            const candMap = new Map(candidates.map((p: any) => [String(p._id), p]));
+            frequentlyBoughtDetails = fbtIds.map((fid: string) => candMap.get(fid)).filter(Boolean);
+          } else if (out.categoryId) {
+            candidates = await Product.find({ categoryId: out.categoryId, isDeleted: false, _id: { $ne: out._id } })
+              .select('_id title mrp actualPrice images categoryId productId tags')
+              .sort({ createdAt: -1 })
+              .limit(6)
+              .lean();
+            frequentlyBoughtDetails = candidates;
+          }
+
+          // Compute ratings for FBT products
+          if (frequentlyBoughtDetails.length) {
+            const idsForReviews = frequentlyBoughtDetails.map((p: any) => p.productId).filter(Boolean);
+            const fbtReviews = await Review.find({ productId: { $in: idsForReviews }, status: 'approved', isDeleted: false }).lean();
+            const reviewsByProd: Record<string, any[]> = {};
+            fbtReviews.forEach((r: any) => {
+              if (!reviewsByProd[r.productId]) reviewsByProd[r.productId] = [];
+              reviewsByProd[r.productId].push(r);
+            });
+            frequentlyBoughtDetails = frequentlyBoughtDetails.map((p: any) => {
+              const revs = reviewsByProd[p.productId] || [];
+              const tot = revs.length;
+              const avg = tot > 0 ? revs.reduce((s: number, x: any) => s + (Number(x.rating) || 0), 0) / tot : 0;
+              const discountPercentage = p.mrp > p.actualPrice ? Math.round(((p.mrp - p.actualPrice) / p.mrp) * 100) : 0;
+              return { ...p, averageRating: parseFloat(avg.toFixed(1)), totalReviews: tot, discountPercentage };
+            });
+          }
+        } catch (e) {
+          console.warn('Could not build frequentlyBoughtTogether details:', e);
+          frequentlyBoughtDetails = [];
+        }
+
         // Omit `delivery` from the returned product object
-        const { delivery, ...productWithoutDelivery } = product as any;
+        const { delivery, ...productWithoutDelivery } = out as any;
         return NextResponse.json(
-          { status: 200, message: 'Product fetched', data: { ...productWithoutDelivery, discountPercentage } },
+          {
+            status: 200,
+            message: 'Product fetched',
+            data: {
+              ...productWithoutDelivery,
+              discountPercentage,
+              averageRating: parseFloat(averageRating.toFixed(1)),
+              totalReviews,
+              more: [
+                { frequentlyBoughtTogether: frequentlyBoughtDetails }
+              ]
+            }
+          },
           { status: 200 }
         );
       } catch (error) {
@@ -145,7 +238,10 @@ export async function GET(req: any) {
 
     // If no explicit filters provided in URL but cookieFilters exist, merge them
     // Skip merging if clearCookie is true (reset was requested)
-    const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || categoryId || dietaryParam);
+    // Note: treat `categoryId` as a direct selector, not as a "filter" that should
+    // trigger tag-group restrictions. Only apply preFilterHasFilters when other
+    // filtering criteria are present (price, rating, vitamins, discount, delivery, dietary).
+    const preFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || dietaryParam);
     if (!preFilterHasFilters && cookieFilters && !clearCookie) {
       // apply only fields that aren't present in the URL
       if (!minPrice && cookieFilters.minPrice !== undefined && cookieFilters.minPrice !== null) minPrice = String(cookieFilters.minPrice);
@@ -266,6 +362,7 @@ export async function GET(req: any) {
       reviewsByProduct[review.productId].push(review);
     });
 
+    
     // If userId provided, fetch the user's cart to determine applied coupon per-product
     const userIdForCoupons = url.searchParams.get('userId');
     let userCart: any = null;
@@ -321,6 +418,32 @@ export async function GET(req: any) {
         appliedCoupon: appliedCouponDetails,
       };
     });
+
+    // Attach per-user isLike flags when user authenticated
+    try {
+      const authHeader = req.headers.get('authorization');
+      let token: string | undefined;
+      if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+      if (!token) token = req.cookies.get('authToken')?.value || undefined;
+      if (token) {
+        const decoded: any = verifyToken(token);
+        const userId = decoded?.userId;
+        if (userId) {
+          const WishlistModel: any = (await import('@/models/wishlist')).default;
+          const wishlist: any = await WishlistModel.findOne({ userId }).lean();
+          const productIds = (wishlist?.items || []).map((it: any) => String(it.productId));
+          const productSet = new Set(productIds);
+          processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: productSet.has(String(r._id)) }));
+        } else {
+          processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+        }
+      } else {
+        processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+      }
+    } catch (e) {
+      console.warn('Could not compute per-user isLike for list:', e);
+      processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+    }
 
     // Filter by star rating if specified
     if (rating) {
@@ -405,27 +528,18 @@ export async function GET(req: any) {
           hasNextPage: page < finalTotalPages,
           hasPrevPage: page > 1,
         },
-        appliedFilters,   
+        appliedFilters,
       }
     };
 
     console.log("resBody........................................", respBody)
 
     const res = NextResponse.json(respBody, { status: 200 });
-    
-    // Persist filters in cookie so /api/product/current-filters can read them
-    try {
-      if (clearCookie) {
-        // Clear the cookie
-        res.headers.set('Set-Cookie', 'productFilters=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=None; Secure');
-      } else if (hasFilters || cookieFilters) {
-        // Persist filters in cookie for subsequent requests (7 days). Use SameSite=None; Secure for cross-site/ngrok.
-        const cookieStr = `productFilters=${encodeURIComponent(JSON.stringify(appliedFilters))}; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=None; Secure`;
-        res.headers.set('Set-Cookie', cookieStr);
-      }
-    } catch (e) {
-      // ignore cookie set errors
-    }
+
+    // NOTE: Persisting `productFilters` into a cookie has been disabled because
+    // large/JSON cookies were triggering ModSecurity/WAF rules (causing 403
+    // responses for some clients). Clients should provide filters via query
+    // parameters or request body (POST /api/product?action=filter) instead.
 
     return res;
   } catch (error: any) {
@@ -474,24 +588,24 @@ export async function POST(req: NextRequest) {
     try {
       const clonedReq = req.clone();
       bodyData = await clonedReq.json();
-      
+
       // Check if body has filter-related fields (but not create/edit fields like title, images, etc.)
       const hasFilterFields = !!(
-        bodyData.minPrice || 
-        bodyData.maxPrice || 
-        bodyData.rating || 
-        bodyData.categoryId || 
-        bodyData.dietary || 
-        bodyData.vitamins || 
-        bodyData.discount !== undefined || 
-        bodyData.delivery || 
+        bodyData.minPrice ||
+        bodyData.maxPrice ||
+        bodyData.rating ||
+        bodyData.categoryId ||
+        bodyData.dietary ||
+        bodyData.vitamins ||
+        bodyData.discount !== undefined ||
+        bodyData.delivery ||
         bodyData.sortBy ||
         bodyData.page ||
         bodyData.limit
       );
-      
+
       const hasProductFields = !!(bodyData.title || bodyData.name || bodyData.images || bodyData.data);
-      
+
       // If has filter fields but no product creation fields, treat as filter
       if (hasFilterFields && !hasProductFields && action === 'create') {
         action = 'filter';
@@ -518,8 +632,8 @@ export async function POST(req: NextRequest) {
       const skip = (page - 1) * limit;
 
       // Filter parameters from body
-      const minPrice = body.minPrice ? String(body.minPrice) : undefined;
-      const maxPrice = body.maxPrice ? String(body.maxPrice) : undefined;
+      let minPrice = body.minPrice ? String(body.minPrice) : undefined;
+      let maxPrice = body.maxPrice ? String(body.maxPrice) : undefined;
       const rating = body.rating ? String(body.rating) : undefined;
       const categoryId = body.categoryId ? String(body.categoryId) : undefined;
       const dietaryParam = body.dietary;
@@ -542,6 +656,18 @@ export async function POST(req: NextRequest) {
         else if (d.length > 1) filter.dietary = { $in: d };
       }
 
+      // Normalize min/max: if both provided and min > max, swap them
+      if (minPrice && maxPrice) {
+        const minN = parseFloat(minPrice);
+        const maxN = parseFloat(maxPrice);
+        if (!isNaN(minN) && !isNaN(maxN) && minN > maxN) {
+          // swap
+          const tmp = minPrice;
+          minPrice = maxPrice;
+          maxPrice = tmp;
+        }
+      }
+
       // Price Range Filter
       if (minPrice || maxPrice) {
         filter.actualPrice = {};
@@ -549,7 +675,7 @@ export async function POST(req: NextRequest) {
           const min = parseFloat(minPrice);
           if (!isNaN(min)) {
             filter.actualPrice.$gte = min;
-          }
+          } 
         }
         if (maxPrice) {
           const max = parseFloat(maxPrice);
@@ -601,9 +727,12 @@ export async function POST(req: NextRequest) {
       }
 
       // Enforce tag-group restriction when user did not explicitly provide tags
+      // Only apply this restriction when the user provided other filtering criteria
+      // (price, rating, vitamins, discount, delivery, dietary) AND did not provide a categoryId.
       const TAG_GROUPS = ['featured', 'arrival', 'hamper'];
       const bodyTagsProvided = body && (body.tags || body.tag);
-      if (!bodyTagsProvided) {
+      const postFilterHasFilters = !!(minPrice || maxPrice || rating || vitaminsParam || discountParam || deliveryParam || dietaryParam);
+      if (!bodyTagsProvided && postFilterHasFilters && !categoryId) {
         filter.tags = { $in: TAG_GROUPS };
         console.log('POST filter: restricting to tag groups', TAG_GROUPS);
       }
@@ -636,6 +765,8 @@ export async function POST(req: NextRequest) {
         reviewsByProduct[review.productId].push(review);
       });
 
+      
+
       // Process products with ratings and discount
       let processedProducts = products.map((product: any) => {
         const productReviews = reviewsByProduct[product.productId] || [];
@@ -649,12 +780,38 @@ export async function POST(req: NextRequest) {
           : 0;
 
         return {
-            ...(() => { const { delivery: _delivery, ...productSafe } = product as any; return productSafe; })(),
-            averageRating: parseFloat(averageRating.toFixed(1)),
-            totalReviews,
-            discountPercentage,
-          };
+          ...(() => { const { delivery: _delivery, ...productSafe } = product as any; return productSafe; })(),
+          averageRating: parseFloat(averageRating.toFixed(1)),
+          totalReviews,
+          discountPercentage,
+        };
       });
+
+      // Attach per-user isLike flags when user authenticated (POST filter branch)
+      try {
+        const authHeader = req.headers.get('authorization');
+        let token: string | undefined;
+        if (authHeader && authHeader.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+        if (!token) token = req.cookies.get('authToken')?.value || undefined;
+        if (token) {
+          const decoded: any = verifyToken(token);
+          const userId = decoded?.userId;
+          if (userId) {
+            const WishlistModel: any = (await import('@/models/wishlist')).default;
+            const wishlist: any = await WishlistModel.findOne({ userId }).lean();
+            const productIds = (wishlist?.items || []).map((it: any) => String(it.productId));
+            const productSet = new Set(productIds);
+            processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: productSet.has(String(r._id)) }));
+          } else {
+            processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+          }
+        } else {
+          processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+        }
+      } catch (e) {
+        console.warn('Could not compute per-user isLike for POST list:', e);
+        processedProducts = processedProducts.map((r: any) => ({ ...r, isLike: r.isLike ?? false }));
+      }
 
       // Filter by star rating if specified
       if (rating) {
@@ -966,6 +1123,42 @@ export async function POST(req: NextRequest) {
           nutrition = undefined;
         }
       }
+    }
+
+    // Normalize nutrition payloads: flatten nested arrays and normalize common shapes
+    if (Array.isArray(nutrition)) {
+      // flatten one level to handle payloads like [ [ {...}, {...} ] ]
+      try { nutrition = nutrition.flatMap((n: any) => Array.isArray(n) ? n : [n]); } catch (e) { /* flatMap may not exist on some runtimes; fallback */ }
+      if (!Array.isArray(nutrition)) {
+        // try manual flatten
+        const flat: any[] = [];
+        for (const it of nutrition as any) {
+          if (Array.isArray(it)) for (const x of it) flat.push(x); else flat.push(it);
+        }
+        nutrition = flat;
+      }
+
+      nutrition = (nutrition as any[]).map((it: any) => {
+        if (!it && it !== 0) return it;
+        if (typeof it === 'string') return { info: String(it).trim() };
+        // If already an object, normalize common keys
+        if (typeof it === 'object') {
+          // already has name/value
+          if (it.name && (it.value || it.weight || it.info)) return { name: it.name, value: it.value ?? it.info ?? it.weight };
+          // legacy { weight, info }
+          if (it.weight && (it.info || it.value)) return { weight: it.weight, value: it.value ?? it.info };
+          // only weight
+          if (it.weight && !it.info && !it.value && !it.name) return { weight: it.weight };
+          // object of parsed info like { Energy: '265 kcal', Protein: '12g' } — convert to array of entries
+          const keys = Object.keys(it).filter(k => ['name','weight','value','info'].indexOf(k) === -1);
+          if (keys.length > 0 && !(it.name || it.weight || it.value || it.info)) {
+            // return as an object under `info` to preserve structure
+            return { info: it };
+          }
+          return it;
+        }
+        return it;
+      });
     }
 
     const hasVitamins = Object.prototype.hasOwnProperty.call(data, 'vitamins') || Object.prototype.hasOwnProperty.call(data, 'vitamin') || Object.prototype.hasOwnProperty.call(data, 'vitaminName');
@@ -1323,12 +1516,95 @@ export async function POST(req: NextRequest) {
         })
         : [];
 
+      // Ensure we provide legacy { weight, info } fields for older compiled schema validators
+      const nutritionForSave = Array.isArray(nutrition)
+        ? (nutrition as any[]).map((it: any) => {
+          if (!it) return { weight: 'N/A', info: 'N/A' };
+          if (typeof it === 'string') return { weight: it, info: it };
+          // if already has weight and info, stringify object info if needed
+          if (it.weight && (it.info || it.value)) {
+            return { weight: String(it.weight), info: typeof it.info === 'object' ? JSON.stringify(it.info) : String(it.info ?? it.value) };
+          }
+          // if item uses name/value
+          if (it.name && (it.value || it.info)) {
+            return { weight: String(it.name), info: String(it.value ?? it.info) };
+          }
+          // fallback: map any existing keys to weight/info
+          const w = it.weight ?? it.name ?? 'N/A';
+          const v = it.info ?? it.value ?? (typeof it === 'object' ? JSON.stringify(it) : String(it));
+          return { weight: String(w), info: typeof v === 'object' ? JSON.stringify(v) : String(v) };
+        })
+        : [];
+
+      // Normalize frequentlyBoughtTogether input: accept array or CSV/JSON string of ids
+      let fbtList: string[] = [];
+      try {
+        const rawFbt = data.frequentlyBoughtTogether ?? data.fbt ?? data.more ?? null;
+        if (Array.isArray(rawFbt)) {
+          const collect: string[] = [];
+          for (const x of rawFbt) {
+            if (!x) continue;
+            if (typeof x === 'string') {
+              const s = String(x).trim(); if (s) collect.push(s); continue;
+            }
+            if (typeof x === 'object') {
+              // case: wrapper object { frequentlyBoughtTogether: [ids] }
+              if (Array.isArray((x as any).frequentlyBoughtTogether)) {
+                for (const y of (x as any).frequentlyBoughtTogether) {
+                  if (!y) continue;
+                  if (typeof y === 'string') { const s = String(y).trim(); if (s) collect.push(s); }
+                  else if (typeof y === 'object') {
+                    const idVal = y._id ?? y.productId ?? y.id ?? y.product_id ?? y.productIdRef ?? null;
+                    if (idVal) collect.push(String(idVal).trim());
+                  }
+                }
+                continue;
+              }
+              const idVal = x._id ?? x.productId ?? x.id ?? x.product_id ?? x.productIdRef ?? null;
+              if (idVal) { collect.push(String(idVal).trim()); continue; }
+            }
+          }
+          fbtList = collect.filter(Boolean);
+        } else if (typeof rawFbt === 'string' && rawFbt.trim()) {
+          try {
+            const parsed = JSON.parse(rawFbt);
+            if (Array.isArray(parsed)) {
+              const collect2: string[] = [];
+              for (const x of parsed) {
+                if (!x) continue;
+                if (typeof x === 'string') { const s = String(x).trim(); if (s) collect2.push(s); continue; }
+                if (typeof x === 'object') {
+                  if (Array.isArray((x as any).frequentlyBoughtTogether)) {
+                    for (const y of (x as any).frequentlyBoughtTogether) {
+                      if (!y) continue;
+                      if (typeof y === 'string') { const s = String(y).trim(); if (s) collect2.push(s); }
+                      else if (typeof y === 'object') {
+                        const idVal = y._id ?? y.productId ?? y.id ?? y.product_id ?? y.productIdRef ?? null;
+                        if (idVal) collect2.push(String(idVal).trim());
+                      }
+                    }
+                    continue;
+                  }
+                  const idVal = x._id ?? x.productId ?? x.id ?? x.product_id ?? x.productIdRef ?? null;
+                  if (idVal) { collect2.push(String(idVal).trim()); continue; }
+                }
+              }
+              fbtList = collect2.filter(Boolean);
+            } else fbtList = String(rawFbt).split(',').map((s: string) => s.trim()).filter(Boolean);
+          } catch (e) {
+            fbtList = String(rawFbt).split(',').map((s: string) => s.trim()).filter(Boolean);
+          }
+        }
+      } catch (e) {
+        fbtList = [];
+      }
+
       const product = new Product({
         title: String(titleTrimmed).trim(),
         mrp: Number(mrpParsed.value),
         actualPrice: Number(actualParsed.value),
         weightVsPrice: normalizedWeightVsPrice,
-        nutrition: Array.isArray(nutrition) ? nutrition : [],
+        nutrition: nutritionForSave,
         vitamins: vitaminsList,
         dietary: dietaryList,
         tags: tagsList,
@@ -1337,6 +1613,7 @@ export async function POST(req: NextRequest) {
         description: description ?? null,
         images: imagesPaths,
         categoryId: categoryId ?? null,
+        frequentlyBoughtTogether: fbtList,
       });
 
       await product.save();
@@ -1397,6 +1674,68 @@ export async function POST(req: NextRequest) {
       }
       if (hasTags && Array.isArray(tags)) {
         product.tags = tags;
+      }
+      // frequentlyBoughtTogether update: accept array of ids or CSV/JSON string
+      if (Object.prototype.hasOwnProperty.call(data, 'frequentlyBoughtTogether') || Object.prototype.hasOwnProperty.call(data, 'fbt') || Object.prototype.hasOwnProperty.call(data, 'more')) {
+          try {
+            const rawFbt = data.frequentlyBoughtTogether ?? data.fbt ?? data.more ?? null;
+            let fbtList: string[] = [];
+            if (Array.isArray(rawFbt)) {
+              const collect: string[] = [];
+              for (const x of rawFbt) {
+                if (!x) continue;
+                if (typeof x === 'string') { const s = String(x).trim(); if (s) collect.push(s); continue; }
+                if (typeof x === 'object') {
+                  if (Array.isArray((x as any).frequentlyBoughtTogether)) {
+                    for (const y of (x as any).frequentlyBoughtTogether) {
+                      if (!y) continue;
+                      if (typeof y === 'string') { const s = String(y).trim(); if (s) collect.push(s); }
+                      else if (typeof y === 'object') {
+                        const idVal = y._id ?? y.productId ?? y.id ?? y.product_id ?? y.productIdRef ?? null;
+                        if (idVal) collect.push(String(idVal).trim());
+                      }
+                    }
+                    continue;
+                  }
+                  const idVal = x._id ?? x.productId ?? x.id ?? x.product_id ?? x.productIdRef ?? null;
+                  if (idVal) { collect.push(String(idVal).trim()); continue; }
+                }
+              }
+              fbtList = collect.filter(Boolean);
+            } else if (typeof rawFbt === 'string' && rawFbt.trim()) {
+              try {
+                const parsed = JSON.parse(rawFbt);
+                if (Array.isArray(parsed)) {
+                  const collect2: string[] = [];
+                  for (const x of parsed) {
+                    if (!x) continue;
+                    if (typeof x === 'string') { const s = String(x).trim(); if (s) collect2.push(s); continue; }
+                    if (typeof x === 'object') {
+                      if (Array.isArray((x as any).frequentlyBoughtTogether)) {
+                        for (const y of (x as any).frequentlyBoughtTogether) {
+                          if (!y) continue;
+                          if (typeof y === 'string') { const s = String(y).trim(); if (s) collect2.push(s); }
+                          else if (typeof y === 'object') {
+                            const idVal = y._id ?? y.productId ?? y.id ?? y.product_id ?? y.productIdRef ?? null;
+                            if (idVal) collect2.push(String(idVal).trim());
+                          }
+                        }
+                        continue;
+                      }
+                      const idVal = x._id ?? x.productId ?? x.id ?? x.product_id ?? x.productIdRef ?? null;
+                      if (idVal) { collect2.push(String(idVal).trim()); continue; }
+                    }
+                  }
+                  fbtList = collect2.filter(Boolean);
+                } else fbtList = String(rawFbt).split(',').map((s: string) => s.trim()).filter(Boolean);
+              } catch (e) {
+                fbtList = String(rawFbt).split(',').map((s: string) => s.trim()).filter(Boolean);
+              }
+            }
+            product.frequentlyBoughtTogether = fbtList;
+          } catch (e) {
+            // ignore invalid fbt input on edit
+          }
       }
       // delivery update for edit branch: accept `delivery` (array) or comma/JSON string
       {

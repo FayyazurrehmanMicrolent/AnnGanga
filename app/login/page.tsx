@@ -60,14 +60,10 @@ export default function LoginPage() {
         setIsLoading(true);
         
         try {
-            const response = await fetch('/api/auth/login', {
+            const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+            const response = await fetchWithDefaults('/api/auth/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    phone,
-                }),
+                body: JSON.stringify({ phone }),
             });
             
             const data = await response.json();
@@ -105,15 +101,10 @@ export default function LoginPage() {
         setIsLoading(true);
         
         try {
-            const response = await fetch('/api/auth/login', {
+            const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+            const response = await fetchWithDefaults('/api/auth/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    phone,
-                    otp: otpString,
-                }),
+                body: JSON.stringify({ phone, otp: otpString }),
                 credentials: 'include' // Important for cookies to be set
             });
             
@@ -157,14 +148,10 @@ export default function LoginPage() {
         if (resendCooldown > 0) return;
         
         try {
-            const response = await fetch('/api/auth/login', {
+            const { default: fetchWithDefaults } = await import('@/lib/fetchClient');
+            const response = await fetchWithDefaults('/api/auth/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    phone,
-                }),
+                body: JSON.stringify({ phone }),
             });
             
             const data = await response.json();
