@@ -39,12 +39,12 @@ const addressSchema = new Schema<IAddress>(
         },
         label: {
             type: String,
-            enum: ['Home', 'Work', 'Other'],
+            enum: ['Home', 'Work','Office', 'Other'],
             default: 'Home',
         },
         addressType: {
             type: String,
-            enum: ['Home', 'Work', 'Other', 'OtherDetailed'],
+            enum: ['Home', 'Work', 'Office', 'Other', 'OtherDetailed'],
             default: 'Home',
         },
         name: {

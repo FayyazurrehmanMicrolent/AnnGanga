@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Address from '@/models/address';
+import { DEFAULT_COUNTRIES } from '@/lib/countries';
 
 // Helper: find address by addressId or _id
 async function findAddressByIdSafe(id: string) {
@@ -41,11 +42,17 @@ export async function GET(req: NextRequest) {
                 );
             }
 
+            // Attach countryName when possible
+            const countryMap = new Map(DEFAULT_COUNTRIES.map((c: any) => [String(c.id), c.countryName]));
+            const withCountryName = address
+                ? { ...address, countryName: address.country ? countryMap.get(String(address.country)) || null : null }
+                : address;
+
             return NextResponse.json(
                 {
                     status: 200,
                     message: 'Default address fetched successfully',
-                    data: address,
+                    data: withCountryName,
                 },
                 { status: 200 }
             );
@@ -56,11 +63,17 @@ export async function GET(req: NextRequest) {
             .sort({ isDefault: -1, createdAt: -1 })
             .lean();
 
+        const countryMap = new Map(DEFAULT_COUNTRIES.map((c: any) => [String(c.id), c.countryName]));
+        const enriched = addresses.map((a: any) => ({
+            ...a,
+            countryName: a.country ? countryMap.get(String(a.country)) || null : null,
+        }));
+
         return NextResponse.json(
             {
                 status: 200,
                 message: 'Addresses fetched successfully',
-                data: addresses,
+                data: enriched,
             },
             { status: 200 }
         );
