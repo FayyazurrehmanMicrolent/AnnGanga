@@ -226,9 +226,9 @@ export async function GET(req: any) {
               discountPercentage,
               averageRating: parseFloat(averageRating.toFixed(1)),
               totalReviews,
-              more: [
-                { frequentlyBoughtTogether: frequentlyBoughtDetails }
-              ]
+              // more: [
+              //   { frequentlyBoughtTogether: frequentlyBoughtDetails }
+              // ]
             }
           },
           { status: 200 }

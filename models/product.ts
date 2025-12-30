@@ -32,6 +32,8 @@ interface IProduct extends Document {
   images: string[]; 
   categoryId?: string | null;
   frequentlyBoughtTogether?: string[]; 
+  isLike?: boolean;
+  more?: any;
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -81,6 +83,8 @@ const productSchema = new Schema<IProduct>(
     images: { type: [String], default: [] },
     categoryId: { type: String, ref: 'Category', default: null },
     frequentlyBoughtTogether: { type: [String], ref: 'Product', default: [] },
+    // flexible `more` field to store additional relations like frequentlyBoughtTogether.product and .recipe
+    more: { type: Schema.Types.Mixed, default: {} },
     isDeleted: { type: Boolean, default: false },
     isLike: { type: Boolean, default: false },
   },
