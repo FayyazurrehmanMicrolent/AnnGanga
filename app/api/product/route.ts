@@ -166,15 +166,14 @@ export async function GET(req: any) {
 
           let candidates: any[] = [];
           if (fbtIds && fbtIds.length) {
-            candidates = await Product.find({ $or: [{ _id: { $in: fbtIds } }, { productId: { $in: fbtIds } }], isDeleted: false })
-              .select('_id title mrp actualPrice images categoryId productId tags')
-              .lean();
+            // return full product documents for FBT so the client gets all details
+            candidates = await Product.find({ $or: [{ _id: { $in: fbtIds } }, { productId: { $in: fbtIds } }], isDeleted: false }).lean();
             // preserve order of fbtIds
             const candMap = new Map(candidates.map((p: any) => [String(p._id), p]));
             frequentlyBoughtDetails = fbtIds.map((fid: string) => candMap.get(fid)).filter(Boolean);
           } else if (out.categoryId) {
+            // when falling back to same-category products, return full docs as well
             candidates = await Product.find({ categoryId: out.categoryId, isDeleted: false, _id: { $ne: out._id } })
-              .select('_id title mrp actualPrice images categoryId productId tags')
               .sort({ createdAt: -1 })
               .limit(6)
               .lean();
@@ -203,14 +202,27 @@ export async function GET(req: any) {
           frequentlyBoughtDetails = [];
         }
 
-        // Omit `delivery` from the returned product object
+        // Omit `delivery` from the returned product object but ensure full detail fields are included
         const { delivery, ...productWithoutDelivery } = out as any;
+        const responseData = {
+          ...productWithoutDelivery,
+          // ensure key detail arrays are present for clients that expect them
+          weightVsPrice: out.weightVsPrice ?? out.weight_vs_price ?? [],
+          nutrition: out.nutrition ?? [],
+          vitamins: out.vitamins ?? [],
+          tags: out.tags ?? [],
+          dietary: out.dietary ?? [],
+          images: out.images ?? [],
+          healthBenefits: out.healthBenefits ?? null,
+          description: out.description ?? null,
+        } as any;
+
         return NextResponse.json(
           {
             status: 200,
             message: 'Product fetched',
             data: {
-              ...productWithoutDelivery,
+              ...responseData,
               discountPercentage,
               averageRating: parseFloat(averageRating.toFixed(1)),
               totalReviews,

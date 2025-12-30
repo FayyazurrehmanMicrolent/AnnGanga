@@ -633,6 +633,59 @@ export default function ProductDetails() {
           </div>
         </div>
 
+        {/* Frequently Bought Together Section */}
+        {Array.isArray((product as any).more) && (product as any).more[0]?.frequentlyBoughtTogether?.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6">Frequently Bought Together</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {((product as any).more[0].frequentlyBoughtTogether as any[]).map((p: any) => {
+                const price = p.actualPrice ?? p.price ?? 0;
+                const firstVariant = p.weightVsPrice && p.weightVsPrice.length ? p.weightVsPrice[0] : null;
+                const displayPrice = firstVariant ? firstVariant.price : price;
+                const image = p.images && p.images.length ? p.images[0] : '/placeholder-product.jpg';
+                return (
+                  <div key={p._id || p.productId} className="bg-white rounded-2xl shadow-sm p-4 flex flex-col">
+                    <div className="flex items-center gap-4">
+                      <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                        <Image src={image} alt={p.title} width={96} height={96} className="object-contain" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-gray-900">{p.title}</h3>
+                        <div className="text-sm text-gray-600 mt-1">{p.weight || (firstVariant && firstVariant.weight) || ''}</div>
+                        <div className="mt-2 flex items-baseline gap-3">
+                          <span className="text-lg font-bold">₹{displayPrice.toFixed(2)}</span>
+                          {p.mrp > (p.actualPrice ?? 0) && (
+                            <span className="text-sm text-gray-500 line-through">₹{(p.mrp || 0).toFixed(2)}</span>
+                          )}
+                        </div>
+                        <div className="mt-3">
+                          <button
+                            onClick={async () => {
+                              const success = await addToCart({
+                                productId: p._id,
+                                quantity: 1,
+                                price: displayPrice,
+                                weightOption: (firstVariant && firstVariant.weight) || p.weight || '',
+                                productName: p.title,
+                                productImage: image,
+                              });
+                              if (success) toast.success('Added to cart');
+                              else toast.error('Failed to add');
+                            }}
+                            className="mt-2 inline-flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-2 rounded-lg font-semibold"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* FAQ Section */}
         {faqs.length > 0 && (
           <div className="mb-12">
