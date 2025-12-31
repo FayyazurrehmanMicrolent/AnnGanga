@@ -278,10 +278,19 @@ export async function POST(req: NextRequest) {
 
             await order.save();
 
-            // create order log for this admin update
+            // create order log for this admin update (use normalized enum and level)
             try {
-                const log = new OrderLog({ orderId: order.orderId, status: `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`, actor: 'admin', actorId: tokenUserId });
-                await log.save();
+                const { normalizeStatus, getStatusLevel } = await import('@/models/orderLog');
+                const normalized = normalizeStatus(`Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`) || normalizeStatus(status) || null;
+                if (normalized) {
+                    const level = getStatusLevel(normalized);
+                    try {
+                        const { createUniqueLog } = await import('@/models/orderLog');
+                        await createUniqueLog({ orderId: order.orderId, status: normalized, level, actor: 'admin', actorId: tokenUserId });
+                    } catch (e) {
+                        console.warn('Failed to create order log on status update:', e);
+                    }
+                }
             } catch (e) {
                 console.warn('Failed to create order log on status update:', e);
             }

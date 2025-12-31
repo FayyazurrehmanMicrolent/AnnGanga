@@ -335,8 +335,14 @@ export async function POST(req: NextRequest) {
 
         // Create order log entry for placement
         try {
-            const log = new OrderLog({ orderId: order.orderId, status: 'Order Placed', actor: 'system' });
-            await log.save();
+            const { normalizeStatus, getStatusLevel, createUniqueLog } = await import('@/models/orderLog');
+            const normalized = normalizeStatus('Order Placed');
+            const level = normalized ? getStatusLevel(normalized) : 1;
+            try {
+                await createUniqueLog({ orderId: order.orderId, status: normalized || 'Order Placed', level, actor: 'system', actorId: null });
+            } catch (e) {
+                console.warn('Failed to create order log for placed order:', e);
+            }
         } catch (e) {
             console.warn('Failed to create order log for placed order:', e);
         }

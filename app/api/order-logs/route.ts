@@ -54,6 +54,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ status: 400, message: 'status is required', data: {} }, { status: 400 });
         }
 
+        // normalize and validate status
+        const { normalizeStatus, getStatusLevel } = await import('@/models/orderLog');
+        const normalized = normalizeStatus(status);
+        if (!normalized) {
+            return NextResponse.json({ status: 400, message: 'Invalid status', data: {} }, { status: 400 });
+        }
+
         // Determine actor (admin vs system) if token present
         let actor = 'system';
         let actorId: string | null = null;
@@ -77,8 +84,26 @@ export async function POST(req: NextRequest) {
             // ignore and keep actor as system
         }
 
-        const log = new OrderLog({ orderId, status, actor, actorId });
-        await log.save();
+        const level = getStatusLevel(normalized);
+        // If a log with same orderId+status already exists, reject with an error
+        try {
+            const existing = await OrderLog.findOne({ orderId, status: normalized }).lean();
+            if (existing) {
+                return NextResponse.json({ status: 400, message: 'This status is already used', data: {} }, { status: 400 });
+            }
+        } catch (e: any) {
+            // continue to attempt create if check fails unexpectedly
+            console.warn('OrderLog existence check failed:', e);
+        }
+
+        let createdLog: any = null;
+        try {
+            const { createUniqueLog } = await import('@/models/orderLog');
+            createdLog = await createUniqueLog({ orderId, status: normalized, level, actor, actorId });
+        } catch (e: any) {
+            // If upsert failed for some reason, surface the error
+            throw e;
+        }
 
         // Optionally update Order.orderStatus when label maps to a known status
         const mapped = mapLabelToOrderStatus(status);
@@ -90,7 +115,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        return NextResponse.json({ status: 201, message: 'Log created', data: log }, { status: 201 });
+        return NextResponse.json({ status: 201, message: 'Log created', data: createdLog }, { status: 201 });
     } catch (error: any) {
         console.error('POST /api/order-logs error:', error);
         return NextResponse.json({ status: 500, message: error.message || 'Failed to create log', data: {} }, { status: 500 });

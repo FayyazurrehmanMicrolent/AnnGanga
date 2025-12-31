@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import OrderLog from '@/models/orderLog';
+import OrderLog, { normalizeStatus, getStatusLevel, createUniqueLog } from '@/models/orderLog';
 import { v4 as uuidv4 } from 'uuid';
 
 interface IOrderItem {
@@ -206,13 +206,14 @@ orderSchema.pre('save', async function (next) {
     try {
         // `this` is the document
         if (this.isModified && this.isModified('orderStatus')) {
-            const status = this.orderStatus || 'updated';
-            const human = `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`;
-            try {
-                await OrderLog.create({ orderId: this.orderId, status: human, actor: 'system' });
-            } catch (e) {
-                // swallow errors to avoid blocking order save
-                console.warn('Failed to create OrderLog in pre-save:', e);
+            const normalized = normalizeStatus(String(this.orderStatus));
+            if (normalized) {
+                const level = getStatusLevel(normalized);
+                try {
+                    await createUniqueLog({ orderId: this.orderId, status: normalized, level, actor: 'system', actorId: null });
+                } catch (e) {
+                    console.warn('Failed to create OrderLog in pre-save:', e);
+                }
             }
         }
     } catch (e) {
@@ -225,12 +226,15 @@ orderSchema.pre('save', async function (next) {
 orderSchema.post('findOneAndUpdate', async function (doc: any) {
     try {
         if (doc && doc.orderStatus) {
-            const status = doc.orderStatus;
-            const human = `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`;
-            try {
-                await OrderLog.create({ orderId: doc.orderId, status: human, actor: 'system' });
-            } catch (e) {
-                console.warn('Failed to create OrderLog in post-findOneAndUpdate:', e);
+            const normalized = normalizeStatus(String(doc.orderStatus));
+            if (normalized) {
+                const level = getStatusLevel(normalized);
+                try {
+                    await createUniqueLog({ orderId: doc.orderId, status: normalized, level, actor: 'system', actorId: null });
+                } catch (e: any) {
+                    // ignore duplicate key errors or log otherwise
+                    console.warn('Failed to create OrderLog in post-findOneAndUpdate:', e);
+                }
             }
         }
     } catch (e) {
