@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import OrderLog from '@/models/orderLog';
 import { v4 as uuidv4 } from 'uuid';
 
 interface IOrderItem {
@@ -139,7 +140,8 @@ const orderSchema = new Schema<IOrder>(
         },
         deliveryAddress: {
             type: deliveryAddressSchema,
-            required: true,
+            required: false,
+            default: null,
         },
         deliveryId: {
             type: String,
@@ -198,6 +200,43 @@ orderSchema.index({ orderSummaryId: 1 });
 // Removed explicit index to avoid duplicate index warnings.
 
 const Order = mongoose.models.Order || mongoose.model<IOrder>('Order', orderSchema);
+
+// Middleware: whenever orderStatus changes, create a new OrderLog entry.
+orderSchema.pre('save', async function (next) {
+    try {
+        // `this` is the document
+        if (this.isModified && this.isModified('orderStatus')) {
+            const status = this.orderStatus || 'updated';
+            const human = `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`;
+            try {
+                await OrderLog.create({ orderId: this.orderId, status: human, actor: 'system' });
+            } catch (e) {
+                // swallow errors to avoid blocking order save
+                console.warn('Failed to create OrderLog in pre-save:', e);
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+    next();
+});
+
+// Post hook for findOneAndUpdate flows (covers direct query updates)
+orderSchema.post('findOneAndUpdate', async function (doc: any) {
+    try {
+        if (doc && doc.orderStatus) {
+            const status = doc.orderStatus;
+            const human = `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`;
+            try {
+                await OrderLog.create({ orderId: doc.orderId, status: human, actor: 'system' });
+            } catch (e) {
+                console.warn('Failed to create OrderLog in post-findOneAndUpdate:', e);
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+});
 
 export default Order;
 export type { IOrder, IOrderItem, IDeliveryAddress };

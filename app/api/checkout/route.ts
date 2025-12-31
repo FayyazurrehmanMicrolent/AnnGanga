@@ -3,12 +3,14 @@ import mongoose from 'mongoose';
 import connectDB from '@/lib/db';
 import Cart from '@/models/cart';
 import Order from '@/models/order';
+import { verifyToken } from '@/lib/auth';
 import Product from '@/models/product';
 import Coupon from '@/models/coupon';
 import SelectedCoupon from '@/models/selectedCoupon';
 import Address from '@/models/address';
 import User from '@/models/users';
 import { redeemRewards, awardRewards, calculateRewardsForOrder } from '@/lib/rewards';
+import OrderLog from '@/models/orderLog';
 
 export async function POST(req: NextRequest) {
     try {
@@ -49,21 +51,47 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Get cart. The system stores `cart.userId` as the Mongo `_id` (string),
-        // but some clients send the user's UUID (`users.id`). Try both.
-        let cart = await Cart.findOne({ userId });
-        if ((!cart || cart.items.length === 0) && userId) {
-            // If client provided the UUID (it contains a dash), try resolving to Mongo _id
+        // Resolve cart robustly: incoming `userId` may be UUID (`users.id`) or Mongo `_id`.
+        // Also prefer authenticated token user id if present.
+        const candidateIds: string[] = [];
+        if (userId) candidateIds.push(String(userId));
+
+        // If a token is present, prefer it as a candidate (helps mobile/web clients)
+        const tokenFromCookie = req.cookies.get('token')?.value || req.cookies.get('authToken')?.value;
+        const authHeader = req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')!.split(' ')[1] : null;
+        const token = tokenFromCookie || authHeader || null;
+        if (token) {
             try {
-                const maybeUser = await User.findOne({ id: userId, isDeleted: false });
+                const decoded = verifyToken(token);
+                const tokenUserId = decoded?.userId;
+                if (tokenUserId && !candidateIds.includes(String(tokenUserId))) candidateIds.push(String(tokenUserId));
+            } catch (e) {
+                // ignore token errors
+            }
+        }
+
+        // If incoming id looks like a UUID (contains dash), try to resolve to Mongo _id
+        if (userId && userId.includes('-')) {
+            try {
+                const maybeUser = await User.findOne({ id: String(userId), isDeleted: false });
                 if (maybeUser) {
-                    // map to the Mongo _id so orders and carts use the same identifier
-                    userId = String(maybeUser._id);
-                    cart = await Cart.findOne({ userId });
+                    const mongoId = String(maybeUser._id);
+                    if (!candidateIds.includes(mongoId)) candidateIds.push(mongoId);
                 }
             } catch (e) {
-                // ignore mapping errors and fall through to empty cart response
+                // ignore
             }
+        }
+
+        // Try to find the cart by any of the candidate identifiers
+        let cart = null as any;
+        if (candidateIds.length) {
+            cart = await Cart.findOne({ userId: { $in: candidateIds } });
+        }
+
+        // If still not found, fallback to original single-id lookup
+        if (!cart && userId) {
+            cart = await Cart.findOne({ userId: String(userId) });
         }
 
         if (!cart || cart.items.length === 0) {
@@ -74,14 +102,15 @@ export async function POST(req: NextRequest) {
         }
 
         // Resolve delivery address: prefer provided addressId -> inline address object -> user's default -> most recent
+        // Allow skipping address for pickup/no-delivery flows via `skipAddress: true` or `deliveryType: 'pickup'|'none'`.
         let resolvedAddress: any = null;
+        const skipAddress = body.skipAddress === true || (deliveryType && ['pickup', 'none'].includes(String(deliveryType).toLowerCase()));
+
         if (addrId) {
             resolvedAddress = await Address.findOne({ addressId: addrId, userId, isDeleted: false });
+            // If addressId not found, continue without error — allow minimal payloads that omit a delivery address
             if (!resolvedAddress) {
-                return NextResponse.json(
-                    { status: 404, message: 'Delivery address not found for provided addressId', data: {} },
-                    { status: 404 }
-                );
+                resolvedAddress = null;
             }
         } else if (address && typeof address === 'object') {
             // Inline address provided in payload — validate required fields
@@ -116,17 +145,22 @@ export async function POST(req: NextRequest) {
                 pincode: aPincode,
             };
         } else {
-            // Try default address first
-            resolvedAddress = await Address.findOne({ userId, isDefault: true, isDeleted: false });
-            if (!resolvedAddress) {
-                // Fallback to most recently updated address
-                resolvedAddress = await Address.findOne({ userId, isDeleted: false }).sort({ updatedAt: -1 });
-            }
-            if (!resolvedAddress) {
-                return NextResponse.json(
-                    { status: 400, message: 'No saved address found for user; include addressId or inline address in payload', data: {} },
-                    { status: 400 }
-                );
+            if (!skipAddress) {
+                // Try default address first
+                resolvedAddress = await Address.findOne({ userId, isDefault: true, isDeleted: false });
+                if (!resolvedAddress) {
+                    // Fallback to most recently updated address
+                    resolvedAddress = await Address.findOne({ userId, isDeleted: false }).sort({ updatedAt: -1 });
+                }
+                if (!resolvedAddress) {
+                    return NextResponse.json(
+                        { status: 400, message: 'No saved address found for user; include addressId or inline address in payload', data: {} },
+                        { status: 400 }
+                    );
+                }
+            } else {
+                // skipAddress true: leave resolvedAddress as null (order will be created without deliveryAddress)
+                resolvedAddress = null;
             }
         }
 
@@ -280,15 +314,17 @@ export async function POST(req: NextRequest) {
             rewardDiscount,
             paymentMethod,
             paymentStatus: 'pending',
-            deliveryAddress: {
-                name: resolvedAddress.name,
-                phone: resolvedAddress.phone,
-                address: resolvedAddress.address,
-                landmark: resolvedAddress.landmark || null,
-                city: resolvedAddress.city,
-                state: resolvedAddress.state || null,
-                pincode: resolvedAddress.pincode,
-            },
+            deliveryAddress: resolvedAddress
+                ? {
+                      name: resolvedAddress.name,
+                      phone: resolvedAddress.phone,
+                      address: resolvedAddress.address,
+                      landmark: resolvedAddress.landmark || null,
+                      city: resolvedAddress.city,
+                      state: resolvedAddress.state || null,
+                      pincode: resolvedAddress.pincode,
+                  }
+                : null,
             deliveryType: deliveryType || 'normal',
             orderSummaryId: orderSummaryID || null,
             orderStatus: 'pending',
@@ -296,6 +332,14 @@ export async function POST(req: NextRequest) {
         });
 
         await order.save();
+
+        // Create order log entry for placement
+        try {
+            const log = new OrderLog({ orderId: order.orderId, status: 'Order Placed', actor: 'system' });
+            await log.save();
+        } catch (e) {
+            console.warn('Failed to create order log for placed order:', e);
+        }
 
         // Clear cart using a new session to avoid transaction conflicts
         // Also remove any applied coupon so it doesn't persist after successful order

@@ -5,6 +5,7 @@ import { authenticateUser } from '@/lib/middleware';
 import { verifyToken } from '@/lib/auth';
 import User from '@/models/users';
 import Role from '@/models/roles';
+import OrderLog from '@/models/orderLog';
 
 // Helper: find order by orderId or _id
 async function findOrderByIdSafe(id: string) {
@@ -276,6 +277,14 @@ export async function POST(req: NextRequest) {
             if (deliveryPartnerId) order.deliveryPartnerId = String(deliveryPartnerId);
 
             await order.save();
+
+            // create order log for this admin update
+            try {
+                const log = new OrderLog({ orderId: order.orderId, status: `Order ${String(status).charAt(0).toUpperCase() + String(status).slice(1)}`, actor: 'admin', actorId: tokenUserId });
+                await log.save();
+            } catch (e) {
+                console.warn('Failed to create order log on status update:', e);
+            }
 
             // TODO: Send notification about status change
 
