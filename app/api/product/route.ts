@@ -49,7 +49,7 @@ export async function GET(req: any) {
 
     // parse URL with fallback for relative URLs (Request.url may be relative)
     let url: URL;
-    try {
+    try { 
       console.log('Processing request URL:', req.url);
       url = new URL(req.url);
     } catch (e) {
@@ -63,10 +63,10 @@ export async function GET(req: any) {
     let dietaryParam = url.searchParams.get('dietary');
     const tag = url.searchParams.get('tag');
 
-    // Pagination parameters
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
-    const skip = (page - 1) * limit;
+    // Pagination parameters (allow override via JSON body)
+    let page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    let limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    let skip = (page - 1) * limit;
 
     // Filter parameters
     let minPrice = url.searchParams.get('minPrice');
@@ -77,7 +77,33 @@ export async function GET(req: any) {
     let deliveryParam = url.searchParams.get('delivery');
     let sortBy = url.searchParams.get('sortBy') || 'newest';
 
-
+    // Also accept JSON body for GET requests containing filters (some clients send filters in body)
+    try {
+      const maybeBody = await (req.clone ? req.clone().json().catch(() => null) : req.json().catch(() => null));
+      if (maybeBody && typeof maybeBody === 'object') {
+        if (maybeBody.page !== undefined && maybeBody.page !== null) {
+          const p = Math.max(1, parseInt(String(maybeBody.page || '1')));
+          if (!Number.isNaN(p)) page = p;
+        }
+        if (maybeBody.limit !== undefined && maybeBody.limit !== null) {
+          const l = Math.min(100, Math.max(1, parseInt(String(maybeBody.limit || '20'))));
+          if (!Number.isNaN(l)) limit = l;
+        }
+        if (maybeBody.minPrice !== undefined && maybeBody.minPrice !== null) minPrice = String(maybeBody.minPrice);
+        if (maybeBody.maxPrice !== undefined && maybeBody.maxPrice !== null) maxPrice = String(maybeBody.maxPrice);
+        if (maybeBody.rating !== undefined && maybeBody.rating !== null) rating = String(maybeBody.rating);
+        if (maybeBody.vitamins !== undefined && maybeBody.vitamins !== null) vitaminsParam = Array.isArray(maybeBody.vitamins) ? maybeBody.vitamins.join(',') : String(maybeBody.vitamins);
+        if (maybeBody.discount !== undefined && maybeBody.discount !== null) discountParam = String(maybeBody.discount);
+        if (maybeBody.delivery !== undefined && maybeBody.delivery !== null) deliveryParam = String(maybeBody.delivery);
+        if (maybeBody.categoryId !== undefined && maybeBody.categoryId !== null) categoryId = String(maybeBody.categoryId);
+        if (maybeBody.dietary !== undefined && maybeBody.dietary !== null) dietaryParam = Array.isArray(maybeBody.dietary) ? maybeBody.dietary.join(',') : String(maybeBody.dietary);
+        if (maybeBody.sortBy !== undefined && maybeBody.sortBy !== null) sortBy = String(maybeBody.sortBy);
+        // recompute skip after possible overrides
+        skip = (page - 1) * limit;
+      }
+    } catch (e) {
+      // ignore body parse errors
+    }
     // Support persistent filters via cookie: if user previously applied filters,
     // persist them in a `productFilters` cookie. When a subsequent request has
     // no filter query params, apply the cookie-stored filters automatically.
@@ -245,9 +271,6 @@ export async function GET(req: any) {
 
     const filter: any = { isDeleted: false };
 
-    // Category Filter
-    if (categoryId) filter.categoryId = categoryId;
-
     // If no explicit filters provided in URL but cookieFilters exist, merge them
     // Skip merging if clearCookie is true (reset was requested)
     // Note: treat `categoryId` as a direct selector, not as a "filter" that should
@@ -266,6 +289,10 @@ export async function GET(req: any) {
       if (!deliveryParam && cookieFilters.delivery) deliveryParam = cookieFilters.delivery;
       if ((!sortBy || sortBy === 'newest') && cookieFilters.sortBy) sortBy = cookieFilters.sortBy;
     }
+
+    // After merging cookie fallback, ensure category filter is applied
+    // (cookieFilters may have provided categoryId when URL did not)
+    if (categoryId) filter.categoryId = categoryId;
 
     // Dietary Tags Filter
     if (dietaryParam) {
