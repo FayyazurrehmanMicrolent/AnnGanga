@@ -4,6 +4,7 @@ import connectDB from '@/lib/db';
 import Cart from '@/models/cart';
 import Product from '@/models/product';
 import SelectedCoupon from '@/models/selectedCoupon';
+import product from '@/models/product';
 
 // Helper: get or create cart for user
 async function getOrCreateCart(userId: string) {
@@ -249,9 +250,37 @@ export async function POST(req: NextRequest) {
                 (item: { productId: any; weightOption: any; }) => item.productId === productId && item.weightOption === weightOption
             );
 
+            // Determine available stock for the selected weight option (if present)
+            let availableStock: number | null = null;
+            try {
+                if (product && Array.isArray(product.weightVsPrice) && product.weightVsPrice.length) {
+                    const matchWeight = weightOption || product.weightVsPrice[0]?.weight;
+                    const wp: any = product.weightVsPrice.find((w: any) => w.weight === matchWeight);
+                    if (wp && typeof wp.quantity === 'number') {
+                        availableStock = Number(wp.quantity);
+                    }
+                }
+            } catch (e) {
+                availableStock = null;
+            }
+
+            const existingQty = existingItemIndex >= 0 ? Number(cart.items[existingItemIndex].quantity) : 0;
+            const newQty = existingQty + Number(quantity);
+
+            if (availableStock !== null && newQty > availableStock) {
+                return NextResponse.json(
+                    {
+                        status: 400,
+                        message: `Cannot add ${quantity} item(s). Only ${Math.max(0, availableStock - existingQty)} more unit(s) available in stock for the selected option.`,
+                        data: {},
+                    },
+                    { status: 400 }
+                );
+            }
+
             if (existingItemIndex >= 0) {
                 // Update quantity
-                cart.items[existingItemIndex].quantity += Number(quantity);
+                cart.items[existingItemIndex].quantity = newQty;
             } else {
                 // Add new item
                 cart.items.push({
@@ -316,6 +345,31 @@ export async function POST(req: NextRequest) {
                     }
                 }
             } else {
+                // Validate against stock for this product/weight option
+                let availableStock: number | null = null;
+                try {
+                    if (product && Array.isArray(product.weightVsPrice) && product.weightVsPrice.length) {
+                        const matchWeight = weightOption || product.weightVsPrice[0]?.weight;
+                        const wp: any = product.weightVsPrice.find((w: any) => w.weight === matchWeight);
+                        if (wp && typeof wp.quantity === 'number') {
+                            availableStock = Number(wp.quantity);
+                        }
+                    }
+                } catch (e) {
+                    availableStock = null;
+                }
+
+                if (availableStock !== null && Number(quantity) > availableStock) {
+                    return NextResponse.json(
+                        {
+                            status: 400,
+                            message: `Requested quantity exceeds available stock (${availableStock}) for the selected option.`,
+                            data: {},
+                        },
+                        { status: 400 }
+                    );
+                }
+
                 // Update quantity
                 cart.items[itemIndex].quantity = Number(quantity);
             }
